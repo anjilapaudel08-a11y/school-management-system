@@ -78,6 +78,10 @@ model AcademicYear {
   school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   enrollments Enrollment[]
 
+  terms              AcademicTerm[]
+  teacherAssignments TeacherAssignment[]
+  classSubjects      ClassSubject[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -93,6 +97,10 @@ model Class {
 
   school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   enrollments Enrollment[]
+
+  subjects           ClassSubject[]
+  teacherAssignments TeacherAssignment[]
+  exams              Exam[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -137,6 +145,8 @@ model Student {
   school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   enrollments Enrollment[]
 
+  marks Mark[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -160,6 +170,8 @@ model Teacher {
   basicSalary Decimal?
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  assignments TeacherAssignment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -187,4 +199,161 @@ model Enrollment {
   @@index([academicYearId])
   @@index([classId])
   @@index([sectionId])
+}
+
+model Subject {
+  id          String  @id @default(cuid())
+  name        String
+  code        String?
+  description String?
+
+  classSubjects      ClassSubject[]
+  examSubjects       ExamSubject[]
+  teacherAssignments TeacherAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name])
+}
+
+model ClassSubject {
+  id             String @id @default(cuid())
+  classId        String
+  subjectId      String
+  academicYearId String
+
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([classId, subjectId, academicYearId])
+  @@index([classId])
+  @@index([subjectId])
+}
+
+model AcademicTerm {
+  id             String @id @default(cuid())
+  academicYearId String
+  name           String
+  order          Int
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  exams        Exam[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academicYearId, order])
+  @@unique([academicYearId, name])
+  @@index([academicYearId])
+}
+
+model Exam {
+  id        String    @id @default(cuid())
+  termId    String
+  classId   String
+  name      String
+  startDate DateTime?
+  endDate   DateTime?
+
+  term     AcademicTerm  @relation(fields: [termId], references: [id], onDelete: Cascade)
+  class    Class         @relation(fields: [classId], references: [id], onDelete: Restrict)
+  subjects ExamSubject[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([termId])
+  @@index([classId])
+}
+
+model ExamSubject {
+  id        String @id @default(cuid())
+  examId    String
+  subjectId String
+
+  theoryFullMarks    Decimal @db.Decimal(6, 2)
+  practicalFullMarks Decimal @db.Decimal(6, 2)
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+
+  marks Mark[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([examId, subjectId])
+  @@index([examId])
+  @@index([subjectId])
+}
+
+model Mark {
+  id            String @id @default(cuid())
+  examSubjectId String
+  studentId     String
+
+  theoryMarks    Decimal @db.Decimal(6, 2)
+  practicalMarks Decimal @db.Decimal(6, 2)
+
+  examSubject ExamSubject @relation(fields: [examSubjectId], references: [id], onDelete: Cascade)
+  student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([examSubjectId, studentId])
+  @@index([studentId])
+  @@index([examSubjectId])
+}
+
+model GradeScale {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+
+  entries GradeScaleEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GradeScaleEntry {
+  id           String @id @default(cuid())
+  gradeScaleId String
+
+  minPercentage Decimal @db.Decimal(5, 2)
+  maxPercentage Decimal @db.Decimal(5, 2)
+  grade         String
+  gradePoint    Decimal @db.Decimal(4, 2)
+
+  gradeScale GradeScale @relation(fields: [gradeScaleId], references: [id], onDelete: Cascade)
+
+  @@index([gradeScaleId])
+}
+
+model TeacherAssignment {
+  id             String @id @default(cuid())
+  teacherId      String
+  classId        String
+  subjectId      String
+  academicYearId String
+
+  teacher      Teacher      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teacherId, classId, subjectId, academicYearId])
+  @@index([teacherId])
+  @@index([classId])
+  @@index([subjectId])
+  @@index([academicYearId])
 }
