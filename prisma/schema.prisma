@@ -11,3 +11,180 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum UserRole {
+  ADMIN
+  BOARD_MEMBER
+}
+
+model School {
+  id              String  @id @default(cuid())
+  name            String
+  shortName       String?
+  address         String?
+  phone           String?
+  email           String?
+  website         String?
+  establishedYear Int?
+  description     String?
+  logo            String?
+  coverImage      String?
+
+  infrastructure Infrastructure[]
+  academicYears  AcademicYear[]
+  classes        Class[]
+  sections       Section[]
+  students       Student[]
+  teachers       Teacher[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id       String   @id @default(cuid())
+  name     String
+  email    String   @unique
+  password String
+  role     UserRole @default(BOARD_MEMBER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Infrastructure {
+  id          String  @id @default(cuid())
+  schoolId    String
+  name        String
+  description String?
+  image       String?
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+}
+
+model AcademicYear {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean  @default(false)
+
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  enrollments Enrollment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+}
+
+model Class {
+  id       String @id @default(cuid())
+  schoolId String
+  name     String
+  order    Int
+
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  enrollments Enrollment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+}
+
+model Section {
+  id       String @id @default(cuid())
+  schoolId String
+  name     String
+
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  enrollments Enrollment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+}
+
+model Student {
+  id              String    @id @default(cuid())
+  schoolId        String
+  admissionNumber String
+  firstName       String
+  middleName      String?
+  lastName        String?
+  dateOfBirth     DateTime?
+  gender          String?
+  address         String?
+  phone           String?
+  email           String?
+  fatherName      String?
+  motherName      String?
+  guardianName    String?
+  guardianPhone   String?
+  photo           String?
+
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  enrollments Enrollment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, admissionNumber])
+  @@index([schoolId])
+}
+
+model Teacher {
+  id          String    @id @default(cuid())
+  schoolId    String
+  firstName   String
+  middleName  String?
+  lastName    String?
+  dateOfBirth DateTime?
+  gender      String?
+  address     String?
+  phone       String?
+  email       String?
+  position    String?
+  joiningDate DateTime?
+  basicSalary Decimal?
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+}
+
+model Enrollment {
+  id             String  @id @default(cuid())
+  studentId      String
+  academicYearId String
+  classId        String
+  sectionId      String?
+  rollNumber     Int?
+
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section      Section?     @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, academicYearId])
+  @@index([academicYearId])
+  @@index([classId])
+  @@index([sectionId])
+}
