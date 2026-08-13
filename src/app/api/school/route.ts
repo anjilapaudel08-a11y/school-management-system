@@ -2,6 +2,37 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
+export async function GET() {
+  try {
+    const session = await auth();
+
+    if (!session) {
+      return NextResponse.json(
+        { error: "Unauthorized." },
+        { status: 401 }
+      );
+    }
+
+    const school = await prisma.school.findFirst();
+
+    if (!school) {
+      return NextResponse.json(
+        { error: "School information not found." },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(school);
+  } catch (error) {
+    console.error("School fetch error:", error);
+
+    return NextResponse.json(
+      { error: "Failed to load school information." },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const session = await auth();

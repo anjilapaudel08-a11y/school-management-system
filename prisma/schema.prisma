@@ -17,6 +17,29 @@ enum UserRole {
   BOARD_MEMBER
 }
 
+enum FeeType {
+  TUITION
+  ADMISSION
+  BUS
+  COMPUTER_LAB
+  EXAM
+  MISCELLANEOUS
+}
+
+enum BillStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  BANK
+  ONLINE
+  OTHER
+}
+
 model School {
   id              String  @id @default(cuid())
   name            String
@@ -82,6 +105,10 @@ model AcademicYear {
   teacherAssignments TeacherAssignment[]
   classSubjects      ClassSubject[]
 
+  feeStructures    FeeStructure[]
+  studentDiscounts StudentDiscount[]
+  bills            Bill[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -101,6 +128,8 @@ model Class {
   subjects           ClassSubject[]
   teacherAssignments TeacherAssignment[]
   exams              Exam[]
+
+  feeStructures FeeStructure[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -145,7 +174,9 @@ model Student {
   school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   enrollments Enrollment[]
 
-  marks Mark[]
+  marks     Mark[]
+  discounts StudentDiscount[]
+  bills     Bill[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -356,4 +387,104 @@ model TeacherAssignment {
   @@index([classId])
   @@index([subjectId])
   @@index([academicYearId])
+}
+
+model FeeStructure {
+  id             String  @id @default(cuid())
+  academicYearId String
+  classId        String
+  feeType        FeeType
+  name           String
+  amount         Decimal
+  isMonthly      Boolean @default(false)
+  isActive       Boolean @default(true)
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academicYearId, classId, feeType, name])
+  @@index([academicYearId])
+  @@index([classId])
+}
+
+model StudentDiscount {
+  id             String  @id @default(cuid())
+  studentId      String
+  academicYearId String
+  name           String
+  amount         Decimal
+  isPercentage   Boolean @default(false)
+  isActive       Boolean @default(true)
+
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([academicYearId])
+}
+
+model Bill {
+  id             String     @id @default(cuid())
+  studentId      String
+  academicYearId String
+  billNumber     String     @unique
+  billingDate    DateTime   @default(now())
+  dueDate        DateTime?
+  totalAmount    Decimal
+  discountAmount Decimal    @default(0)
+  paidAmount     Decimal    @default(0)
+  status         BillStatus @default(UNPAID)
+  notes          String?
+
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  items        BillItem[]
+  payments     Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([academicYearId])
+  @@index([billingDate])
+  @@index([status])
+}
+
+model BillItem {
+  id          String  @id @default(cuid())
+  billId      String
+  feeType     FeeType
+  description String
+  quantity    Decimal @default(1)
+  rate        Decimal
+  amount      Decimal
+
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId])
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  billId      String
+  amount      Decimal
+  paymentDate DateTime      @default(now())
+  method      PaymentMethod
+  reference   String?
+  notes       String?
+
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([billId])
+  @@index([paymentDate])
+  @@index([method])
 }
