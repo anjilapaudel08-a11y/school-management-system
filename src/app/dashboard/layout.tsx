@@ -47,7 +47,7 @@ export default async function DashboardLayout({
           </a>
 
           <a
-            href="/dashboard/billing"
+            href="/dashboard/finance"
             className="block rounded-lg px-3 py-2 hover:bg-white/10"
           >
             Billing & Finance

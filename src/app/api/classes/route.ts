@@ -2,8 +2,20 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
+  const requestStart = Date.now();
+
   try {
+    console.log("[classes] GET started");
+
+    const schoolStart = Date.now();
+
     const school = await prisma.school.findFirst();
+
+    console.log(
+      `[classes] school.findFirst(): ${
+        Date.now() - schoolStart
+      }ms`
+    );
 
     if (!school) {
       return NextResponse.json(
@@ -11,6 +23,8 @@ export async function GET() {
         { status: 404 }
       );
     }
+
+    const classesStart = Date.now();
 
     const classes = await prisma.class.findMany({
       where: {
@@ -21,9 +35,24 @@ export async function GET() {
       },
     });
 
+    console.log(
+      `[classes] class.findMany(): ${
+        Date.now() - classesStart
+      }ms`
+    );
+
+    console.log(
+      `[classes] TOTAL: ${
+        Date.now() - requestStart
+      }ms`
+    );
+
     return NextResponse.json(classes);
   } catch (error) {
-    console.error("Failed to fetch classes:", error);
+    console.error(
+      "Failed to fetch classes:",
+      error
+    );
 
     return NextResponse.json(
       { error: "Failed to fetch classes." },

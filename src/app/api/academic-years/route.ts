@@ -2,8 +2,20 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
+  const requestStart = Date.now();
+
   try {
+    console.log("[academic-years] GET started");
+
+    const schoolStart = Date.now();
+
     const school = await prisma.school.findFirst();
+
+    console.log(
+      `[academic-years] school.findFirst(): ${
+        Date.now() - schoolStart
+      }ms`
+    );
 
     if (!school) {
       return NextResponse.json(
@@ -11,6 +23,8 @@ export async function GET() {
         { status: 404 }
       );
     }
+
+    const yearsStart = Date.now();
 
     const academicYears = await prisma.academicYear.findMany({
       where: {
@@ -21,9 +35,24 @@ export async function GET() {
       },
     });
 
+    console.log(
+      `[academic-years] academicYear.findMany(): ${
+        Date.now() - yearsStart
+      }ms`
+    );
+
+    console.log(
+      `[academic-years] TOTAL: ${
+        Date.now() - requestStart
+      }ms`
+    );
+
     return NextResponse.json(academicYears);
   } catch (error) {
-    console.error("Failed to fetch academic years:", error);
+    console.error(
+      "Failed to fetch academic years:",
+      error
+    );
 
     return NextResponse.json(
       { error: "Failed to fetch academic years." },
