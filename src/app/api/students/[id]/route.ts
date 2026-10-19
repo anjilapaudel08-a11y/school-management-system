@@ -7,6 +7,34 @@ type RouteContext = {
   }>;
 };
 
+function parseOptionalDate(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const date = new Date(String(value));
+
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+
+  return date;
+}
+
+function parseOptionalRollNumber(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const number = Number(value);
+
+  if (!Number.isInteger(number) || number < 1) {
+    return undefined;
+  }
+
+  return number;
+}
+
 export async function PATCH(
   request: Request,
   context: RouteContext
@@ -19,6 +47,9 @@ export async function PATCH(
       where: {
         id,
       },
+      include: {
+        enrollments: true,
+      },
     });
 
     if (!student) {
@@ -28,7 +59,10 @@ export async function PATCH(
       );
     }
 
-    const firstName = body.firstName?.trim();
+    const firstName =
+      typeof body.firstName === "string"
+        ? body.firstName.trim()
+        : "";
 
     if (!firstName) {
       return NextResponse.json(
@@ -37,32 +71,216 @@ export async function PATCH(
       );
     }
 
-    const updatedStudent = await prisma.student.update({
+    const middleName =
+      typeof body.middleName === "string"
+        ? body.middleName.trim() || null
+        : null;
+
+    const lastName =
+      typeof body.lastName === "string"
+        ? body.lastName.trim() || null
+        : null;
+
+    const gender =
+      typeof body.gender === "string"
+        ? body.gender.trim() || null
+        : null;
+
+    const address =
+      typeof body.address === "string"
+        ? body.address.trim() || null
+        : null;
+
+    const phone =
+      typeof body.phone === "string"
+        ? body.phone.trim() || null
+        : null;
+
+    const email =
+      typeof body.email === "string"
+        ? body.email.trim() || null
+        : null;
+
+    const fatherName =
+      typeof body.fatherName === "string"
+        ? body.fatherName.trim() || null
+        : null;
+
+    const motherName =
+      typeof body.motherName === "string"
+        ? body.motherName.trim() || null
+        : null;
+
+    const guardianName =
+      typeof body.guardianName === "string"
+        ? body.guardianName.trim() || null
+        : null;
+
+    const guardianPhone =
+      typeof body.guardianPhone === "string"
+        ? body.guardianPhone.trim() || null
+        : null;
+
+    const dateOfBirth = parseOptionalDate(body.dateOfBirth);
+
+    if (
+      body.dateOfBirth !== undefined &&
+      body.dateOfBirth !== null &&
+      body.dateOfBirth !== "" &&
+      dateOfBirth === undefined
+    ) {
+      return NextResponse.json(
+        { error: "Invalid date of birth." },
+        { status: 400 }
+      );
+    }
+
+    const academicYearId = body.academicYearId;
+    const classId = body.classId;
+
+    if (!academicYearId) {
+      return NextResponse.json(
+        { error: "Academic year is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!classId) {
+      return NextResponse.json(
+        { error: "Class is required." },
+        { status: 400 }
+      );
+    }
+
+    const rollNumber = parseOptionalRollNumber(body.rollNumber);
+
+    if (rollNumber === undefined) {
+      return NextResponse.json(
+        {
+          error:
+            "Roll number must be a whole number greater than 0.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const academicYear = await prisma.academicYear.findFirst({
       where: {
-        id,
+        id: academicYearId,
+        schoolId: student.schoolId,
       },
-      data: {
-        firstName,
-        middleName: body.middleName?.trim() || null,
-        lastName: body.lastName?.trim() || null,
-        dateOfBirth: body.dateOfBirth
-          ? new Date(body.dateOfBirth)
-          : null,
-        gender: body.gender?.trim() || null,
-        phone: body.phone?.trim() || null,
-        fatherName: body.fatherName?.trim() || null,
-        motherName: body.motherName?.trim() || null,
-        guardianName: body.guardianName?.trim() || null,
-        guardianPhone: body.guardianPhone?.trim() || null,
+    });
+
+    if (!academicYear) {
+      return NextResponse.json(
+        { error: "Invalid academic year." },
+        { status: 400 }
+      );
+    }
+
+    const schoolClass = await prisma.class.findFirst({
+      where: {
+        id: classId,
+        schoolId: student.schoolId,
       },
-      include: {
-        enrollments: {
-          include: {
-            academicYear: true,
-            class: true,
+    });
+
+    if (!schoolClass) {
+      return NextResponse.json(
+        { error: "Invalid class." },
+        { status: 400 }
+      );
+    }
+
+    /*
+     * IMPORTANT:
+     *
+     * We never change an old academic-year enrollment into a
+     * different academic year.
+     *
+     * Instead:
+     *
+     * 2083 -> Class 5
+     * 2084 -> Class 6
+     *
+     * are kept as two separate enrollment records.
+     *
+     * If the selected year already has an enrollment, we update
+     * that year's class/roll number.
+     *
+     * If it doesn't exist, we create a new enrollment.
+     */
+
+    const updatedStudent = await prisma.$transaction(async (tx) => {
+      await tx.student.update({
+        where: {
+          id: student.id,
+        },
+        data: {
+          firstName,
+          middleName,
+          lastName,
+          dateOfBirth: dateOfBirth ?? null,
+          gender,
+          address,
+          phone,
+          email,
+          fatherName,
+          motherName,
+          guardianName,
+          guardianPhone,
+        },
+      });
+
+      const targetEnrollment =
+        await tx.enrollment.findUnique({
+          where: {
+            studentId_academicYearId: {
+              studentId: student.id,
+              academicYearId,
+            },
+          },
+        });
+
+      if (targetEnrollment) {
+        await tx.enrollment.update({
+          where: {
+            id: targetEnrollment.id,
+          },
+          data: {
+            classId,
+            rollNumber,
+          },
+        });
+      } else {
+        await tx.enrollment.create({
+          data: {
+            studentId: student.id,
+            academicYearId,
+            classId,
+            rollNumber,
+          },
+        });
+      }
+
+      return tx.student.findUnique({
+        where: {
+          id: student.id,
+        },
+        include: {
+          enrollments: {
+            include: {
+              academicYear: true,
+              class: true,
+            },
+            orderBy: {
+              academicYear: {
+                startDate: "desc",
+              },
+            },
           },
         },
-      },
+      });
     });
 
     return NextResponse.json(updatedStudent);
@@ -88,8 +306,11 @@ export async function DELETE(
         id,
       },
       include: {
-        enrollments: true,
         marks: true,
+        bills: true,
+        charges: true,
+        discounts: true,
+        credits: true,
       },
     });
 
@@ -110,6 +331,46 @@ export async function DELETE(
       );
     }
 
+    if (student.bills.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "This student cannot be deleted because billing history exists for this student.",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (student.charges.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "This student cannot be deleted because student charges exist.",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (student.discounts.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "This student cannot be deleted because student discounts exist.",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (student.credits.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "This student cannot be deleted because student credits exist.",
+        },
+        { status: 409 }
+      );
+    }
+
     await prisma.student.delete({
       where: {
         id,
@@ -123,7 +384,10 @@ export async function DELETE(
     console.error("Failed to delete student:", error);
 
     return NextResponse.json(
-      { error: "Failed to delete student." },
+      {
+        error:
+          "Failed to delete student. The student may have related records.",
+      },
       { status: 500 }
     );
   }

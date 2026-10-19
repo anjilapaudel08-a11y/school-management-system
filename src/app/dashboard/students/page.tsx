@@ -1,6 +1,8 @@
+
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Eye, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 
 type AcademicYear = {
   id: string;
@@ -10,17 +12,25 @@ type AcademicYear = {
   isActive: boolean;
 };
 
-type SchoolClass = {
+type ClassItem = {
   id: string;
   name: string;
-  order: number;
+};
+
+type Section = {
+  id: string;
+  name: string;
 };
 
 type Enrollment = {
   id: string;
+  academicYearId: string;
+  classId: string;
+  sectionId: string | null;
   rollNumber: number | null;
   academicYear: AcademicYear;
-  class: SchoolClass;
+  class: ClassItem;
+  section: Section | null;
 };
 
 type Student = {
@@ -31,249 +41,407 @@ type Student = {
   lastName: string | null;
   dateOfBirth: string | null;
   gender: string | null;
+  address: string | null;
   phone: string | null;
+  email: string | null;
   fatherName: string | null;
   motherName: string | null;
   guardianName: string | null;
   guardianPhone: string | null;
+  photo: string | null;
   enrollments: Enrollment[];
+};
+
+type StudentForm = {
+  admissionNumber: string;
+  firstName: string;
+  middleName: string;
+  lastName: string;
+  dateOfBirth: string;
+  gender: string;
+  address: string;
+  phone: string;
+  email: string;
+  fatherName: string;
+  motherName: string;
+  guardianName: string;
+  guardianPhone: string;
+  academicYearId: string;
+  classId: string;
+  sectionId: string;
+  rollNumber: string;
+};
+
+const emptyForm: StudentForm = {
+  admissionNumber: "",
+  firstName: "",
+  middleName: "",
+  lastName: "",
+  dateOfBirth: "",
+  gender: "",
+  address: "",
+  phone: "",
+  email: "",
+  fatherName: "",
+  motherName: "",
+  guardianName: "",
+  guardianPhone: "",
+  academicYearId: "",
+  classId: "",
+  sectionId: "",
+  rollNumber: "",
 };
 
 export default function StudentsPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
-  const [classes, setClasses] = useState<SchoolClass[]>([]);
-
-  const [firstName, setFirstName] = useState("");
-  const [middleName, setMiddleName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [dateOfBirth, setDateOfBirth] = useState("");
-  const [gender, setGender] = useState("");
-  const [phone, setPhone] = useState("");
-
-  const [academicYearId, setAcademicYearId] = useState("");
-  const [classId, setClassId] = useState("");
-  const [rollNumber, setRollNumber] = useState("");
-
-  const [fatherName, setFatherName] = useState("");
-  const [motherName, setMotherName] = useState("");
-  const [guardianName, setGuardianName] = useState("");
-  const [guardianPhone, setGuardianPhone] = useState("");
-
-  const [editingStudentId, setEditingStudentId] = useState<string | null>(
-    null
-  );
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [sections, setSections] = useState<Section[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const [search, setSearch] = useState("");
+
+  const [showForm, setShowForm] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+
+  const [form, setForm] = useState<StudentForm>(emptyForm);
+
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  async function fetchStudents() {
-    const response = await fetch("/api/students");
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch students.");
-    }
-
-    const data = await response.json();
-    setStudents(data);
-  }
-
-  async function fetchAcademicYears() {
-    const response = await fetch("/api/academic-years");
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch academic years.");
-    }
-
-    const data = await response.json();
-    setAcademicYears(data);
-
-    const activeYear = data.find(
-      (year: AcademicYear) => year.isActive
-    );
-
-    if (activeYear && !editingStudentId) {
-      setAcademicYearId(activeYear.id);
-    }
-  }
-
-  async function fetchClasses() {
-    const response = await fetch("/api/classes");
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch classes.");
-    }
-
-    const data = await response.json();
-    setClasses(data);
-  }
-
-  useEffect(() => {
-    async function loadData() {
-      try {
-        setError("");
-
-        await Promise.all([
-          fetchStudents(),
-          fetchAcademicYears(),
-          fetchClasses(),
-        ]);
-      } catch (error) {
-        console.error(error);
-
-        setError(
-          error instanceof Error
-            ? error.message
-            : "Failed to load student data."
-        );
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadData();
-  }, []);
-
-  function resetForm() {
-    setFirstName("");
-    setMiddleName("");
-    setLastName("");
-    setDateOfBirth("");
-    setGender("");
-    setPhone("");
-    setRollNumber("");
-    setFatherName("");
-    setMotherName("");
-    setGuardianName("");
-    setGuardianPhone("");
-    setEditingStudentId(null);
-  }
-
-  function handleEdit(student: Student) {
-    const enrollment = student.enrollments[0];
-
-    setEditingStudentId(student.id);
-
-    setFirstName(student.firstName);
-    setMiddleName(student.middleName || "");
-    setLastName(student.lastName || "");
-
-    if (student.dateOfBirth) {
-      setDateOfBirth(student.dateOfBirth.split("T")[0]);
-    } else {
-      setDateOfBirth("");
-    }
-
-    setGender(student.gender || "");
-    setPhone(student.phone || "");
-
-    if (enrollment) {
-      setAcademicYearId(enrollment.academicYear.id);
-      setClassId(enrollment.class.id);
-      setRollNumber(
-        enrollment.rollNumber !== null
-          ? String(enrollment.rollNumber)
-          : ""
-      );
-    }
-
-    setFatherName(student.fatherName || "");
-    setMotherName(student.motherName || "");
-    setGuardianName(student.guardianName || "");
-    setGuardianPhone(student.guardianPhone || "");
-
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
-  }
-
-  async function handleSubmit(
-    e: React.SubmitEvent<HTMLFormElement>
-  ) {
-    e.preventDefault();
-
+  const loadStudents = async () => {
     try {
-      setSaving(true);
+      setLoading(true);
       setError("");
 
-      const isEditing = editingStudentId !== null;
-
-      const response = await fetch(
-        isEditing
-          ? `/api/students/${editingStudentId}`
-          : "/api/students",
-        {
-          method: isEditing ? "PATCH" : "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            firstName,
-            middleName,
-            lastName,
-            dateOfBirth: dateOfBirth || null,
-            gender,
-            phone,
-            academicYearId,
-            classId,
-            rollNumber: rollNumber || null,
-            fatherName,
-            motherName,
-            guardianName,
-            guardianPhone,
-          }),
-        }
-      );
+      const response = await fetch("/api/students", {
+        cache: "no-store",
+      });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          data.error ||
-            (isEditing
-              ? "Failed to update student."
-              : "Failed to create student.")
-        );
+        throw new Error(data.error || "Failed to load students.");
       }
 
-      if (isEditing) {
-        setStudents((current) =>
-          current.map((student) =>
-            student.id === data.id ? data : student
-          )
-        );
-      } else {
-        setStudents((current) => [data, ...current]);
-      }
-
-      resetForm();
-    } catch (error) {
-      console.error(error);
-
+      setStudents(data);
+    } catch (err) {
       setError(
-        error instanceof Error
-          ? error.message
-          : "Failed to save student."
+        err instanceof Error ? err.message : "Failed to load students."
       );
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
-  }
+  };
 
-  async function handleDelete(student: Student) {
-    const fullName = [
+  const loadAcademicYears = async () => {
+    try {
+      const response = await fetch("/api/academic-years", {
+        cache: "no-store",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to load academic years.");
+      }
+
+      setAcademicYears(data);
+    } catch (err) {
+      console.error("Failed to load academic years:", err);
+    }
+  };
+
+  const loadClasses = async () => {
+    try {
+      const response = await fetch("/api/classes", {
+        cache: "no-store",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to load classes.");
+      }
+
+      setClasses(data);
+    } catch (err) {
+      console.error("Failed to load classes:", err);
+    }
+  };
+
+  const loadSections = async () => {
+    try {
+      const response = await fetch("/api/sections", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        setSections([]);
+        return;
+      }
+
+      const data = await response.json();
+      setSections(data);
+    } catch {
+      setSections([]);
+    }
+  };
+
+  useEffect(() => {
+    loadStudents();
+    loadAcademicYears();
+    loadClasses();
+    loadSections();
+  }, []);
+
+  const filteredStudents = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    if (!query) {
+      return students;
+    }
+
+    return students.filter((student) => {
+      const fullName = [
+        student.firstName,
+        student.middleName,
+        student.lastName,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      const latestEnrollment = student.enrollments?.[0];
+
+      const searchableText = [
+        fullName,
+        student.admissionNumber,
+        student.phone,
+        student.email,
+        latestEnrollment?.class?.name,
+        latestEnrollment?.section?.name,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(query);
+    });
+  }, [students, search]);
+
+  const latestEnrollment = (student: Student) => {
+    return student.enrollments?.[0] ?? null;
+  };
+
+  const studentFullName = (student: Student) => {
+    return [
       student.firstName,
       student.middleName,
       student.lastName,
     ]
       .filter(Boolean)
       .join(" ");
+  };
 
+  const resetForm = () => {
+    setForm({
+      ...emptyForm,
+      academicYearId:
+        academicYears.find((year) => year.isActive)?.id ||
+        academicYears[0]?.id ||
+        "",
+    });
+    setEditingStudent(null);
+    setError("");
+  };
+
+  const openAddForm = () => {
+    resetForm();
+    setShowForm(true);
+  };
+
+  const openEditForm = (student: Student) => {
+    const enrollment = latestEnrollment(student);
+
+    setEditingStudent(student);
+
+    setForm({
+      admissionNumber: student.admissionNumber || "",
+      firstName: student.firstName || "",
+      middleName: student.middleName || "",
+      lastName: student.lastName || "",
+      dateOfBirth: student.dateOfBirth
+        ? student.dateOfBirth.substring(0, 10)
+        : "",
+      gender: student.gender || "",
+      address: student.address || "",
+      phone: student.phone || "",
+      email: student.email || "",
+      fatherName: student.fatherName || "",
+      motherName: student.motherName || "",
+      guardianName: student.guardianName || "",
+      guardianPhone: student.guardianPhone || "",
+      academicYearId: enrollment?.academicYearId || "",
+      classId: enrollment?.classId || "",
+      sectionId: enrollment?.sectionId || "",
+      rollNumber:
+        enrollment?.rollNumber !== null &&
+        enrollment?.rollNumber !== undefined
+          ? String(enrollment.rollNumber)
+          : "",
+    });
+
+    setError("");
+    setShowForm(true);
+  };
+
+  const handleAcademicYearChange = (academicYearId: string) => {
+    setForm((current) => {
+      if (!editingStudent) {
+        return {
+          ...current,
+          academicYearId,
+          classId: "",
+          sectionId: "",
+          rollNumber: "",
+        };
+      }
+
+      const existingEnrollment = editingStudent.enrollments.find(
+        (enrollment) => enrollment.academicYearId === academicYearId
+      );
+
+      if (existingEnrollment) {
+        return {
+          ...current,
+          academicYearId,
+          classId: existingEnrollment.classId,
+          sectionId: existingEnrollment.sectionId || "",
+          rollNumber:
+            existingEnrollment.rollNumber !== null &&
+            existingEnrollment.rollNumber !== undefined
+              ? String(existingEnrollment.rollNumber)
+              : "",
+        };
+      }
+
+      return {
+        ...current,
+        academicYearId,
+        classId: "",
+        sectionId: "",
+        rollNumber: "",
+      };
+    });
+  };
+
+  const handleChange = (
+    field: keyof StudentForm,
+    value: string
+  ) => {
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    try {
+      setSaving(true);
+      setError("");
+      setSuccess("");
+
+      if (!form.firstName.trim()) {
+        setError("First name is required.");
+        return;
+      }
+
+      if (!form.academicYearId) {
+        setError("Academic year is required.");
+        return;
+      }
+
+      if (!form.classId) {
+        setError("Class is required.");
+        return;
+      }
+
+      const payload = {
+        admissionNumber: form.admissionNumber.trim(),
+        firstName: form.firstName.trim(),
+        middleName: form.middleName.trim() || null,
+        lastName: form.lastName.trim() || null,
+        dateOfBirth: form.dateOfBirth || null,
+        gender: form.gender || null,
+        address: form.address.trim() || null,
+        phone: form.phone.trim() || null,
+        email: form.email.trim() || null,
+        fatherName: form.fatherName.trim() || null,
+        motherName: form.motherName.trim() || null,
+        guardianName: form.guardianName.trim() || null,
+        guardianPhone: form.guardianPhone.trim() || null,
+        academicYearId: form.academicYearId,
+        classId: form.classId,
+        sectionId: form.sectionId || null,
+        rollNumber: form.rollNumber
+          ? Number(form.rollNumber)
+          : null,
+      };
+
+      const url = editingStudent
+        ? `/api/students/${editingStudent.id}`
+        : "/api/students";
+
+      const method = editingStudent ? "PUT" : "POST";
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            `Failed to ${editingStudent ? "update" : "create"} student.`
+        );
+      }
+
+      setSuccess(
+        editingStudent
+          ? "Student updated successfully."
+          : "Student created successfully."
+      );
+
+      setShowForm(false);
+      setEditingStudent(null);
+      setForm(emptyForm);
+
+      await loadStudents();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (student: Student) => {
     const confirmed = window.confirm(
-      `Are you sure you want to delete ${fullName}?`
+      `Are you sure you want to delete ${studentFullName(
+        student
+      )}? This action cannot be undone if the student has no financial or academic records.`
     );
 
     if (!confirmed) {
@@ -281,8 +449,8 @@ export default function StudentsPage() {
     }
 
     try {
-      setDeletingId(student.id);
       setError("");
+      setSuccess("");
 
       const response = await fetch(
         `/api/students/${student.id}`,
@@ -299,383 +467,679 @@ export default function StudentsPage() {
         );
       }
 
-      setStudents((current) =>
-        current.filter((item) => item.id !== student.id)
-      );
-
-      if (editingStudentId === student.id) {
-        resetForm();
-      }
-    } catch (error) {
-      console.error(error);
-
+      setSuccess("Student deleted successfully.");
+      await loadStudents();
+    } catch (err) {
       setError(
-        error instanceof Error
-          ? error.message
+        err instanceof Error
+          ? err.message
           : "Failed to delete student."
       );
-    } finally {
-      setDeletingId(null);
     }
-  }
+  };
+
+  const goToProfile = (studentId: string) => {
+    window.location.href = `/dashboard/students/${studentId}`;
+  };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Students</h1>
+      {/* Header */}
+      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-(--primary-dark)">
+            Students
+          </h1>
 
-        <p className="text-sm text-gray-500">
-          Register and manage students in your school.
-        </p>
+          <p className="mt-1 text-sm text-(--muted)">
+            Manage student information, enrollment and academic history.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={openAddForm}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-(--primary-dark) px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+        >
+          <Plus size={18} />
+          Add Student
+        </button>
       </div>
 
+      {/* Alerts */}
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
 
-      <form
-        onSubmit={handleSubmit}
-        className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm"
-      >
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold">
-            {editingStudentId ? "Edit Student" : "Add Student"}
-          </h2>
+      {success && (
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {success}
+        </div>
+      )}
 
-          {editingStudentId && (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="text-sm text-gray-500 hover:text-gray-900"
-            >
-              Cancel Edit
-            </button>
-          )}
+      {/* Summary */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="rounded-xl border border-(--border) bg-(--surface) p-5">
+          <p className="text-sm text-(--muted)">Total Students</p>
+          <p className="mt-1 text-2xl font-bold text-(--primary-dark)">
+            {students.length}
+          </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              First Name
-            </label>
-
-            <input
-              type="text"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              required
-              placeholder="e.g. Ram"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Middle Name
-            </label>
-
-            <input
-              type="text"
-              value={middleName}
-              onChange={(e) => setMiddleName(e.target.value)}
-              placeholder="Optional"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Last Name
-            </label>
-
-            <input
-              type="text"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              placeholder="e.g. Sharma"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Date of Birth
-            </label>
-
-            <input
-              type="date"
-              value={dateOfBirth}
-              onChange={(e) => setDateOfBirth(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Gender
-            </label>
-
-            <select
-              value={gender}
-              onChange={(e) => setGender(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 outline-none"
-            >
-              <option value="">Select gender</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Phone
-            </label>
-
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="Optional"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
-            />
-          </div>
+        <div className="rounded-xl border border-(--border) bg-(--surface) p-5">
+          <p className="text-sm text-(--muted)">Showing</p>
+          <p className="mt-1 text-2xl font-bold text-(--primary-dark)">
+            {filteredStudents.length}
+          </p>
         </div>
 
-        <div className="my-6 border-t border-gray-200" />
-
-        <h3 className="mb-4 text-base font-semibold">
-          Enrollment
-        </h3>
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Academic Year
-            </label>
-
-            <select
-              value={academicYearId}
-              onChange={(e) => setAcademicYearId(e.target.value)}
-              required
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 outline-none"
-            >
-              <option value="">Select academic year</option>
-
-              {academicYears.map((year) => (
-                <option key={year.id} value={year.id}>
-                  {year.name}
-                  {year.isActive ? " (Active)" : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Class
-            </label>
-
-            <select
-              value={classId}
-              onChange={(e) => setClassId(e.target.value)}
-              required
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 outline-none"
-            >
-              <option value="">Select class</option>
-
-              {classes.map((schoolClass) => (
-                <option
-                  key={schoolClass.id}
-                  value={schoolClass.id}
-                >
-                  {schoolClass.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Roll Number
-            </label>
-
-            <input
-              type="number"
-              min="1"
-              value={rollNumber}
-              onChange={(e) => setRollNumber(e.target.value)}
-              placeholder="Optional"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
-            />
-          </div>
+        <div className="rounded-xl border border-(--border) bg-(--surface) p-5">
+          <p className="text-sm text-(--muted)">Academic Years</p>
+          <p className="mt-1 text-2xl font-bold text-(--primary-dark)">
+            {academicYears.length}
+          </p>
         </div>
-
-        <div className="my-6 border-t border-gray-200" />
-
-        <h3 className="mb-4 text-base font-semibold">
-          Parent / Guardian Details
-        </h3>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Father Name
-            </label>
-
-            <input
-              type="text"
-              value={fatherName}
-              onChange={(e) => setFatherName(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Mother Name
-            </label>
-
-            <input
-              type="text"
-              value={motherName}
-              onChange={(e) => setMotherName(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Guardian Name
-            </label>
-
-            <input
-              type="text"
-              value={guardianName}
-              onChange={(e) => setGuardianName(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Guardian Phone
-            </label>
-
-            <input
-              type="tel"
-              value={guardianPhone}
-              onChange={(e) => setGuardianPhone(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
-            />
-          </div>
-        </div>
-
-        <div className="mt-6 flex gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-lg bg-red-600 px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {saving
-              ? "Saving..."
-              : editingStudentId
-                ? "Save Changes"
-                : "Add Student"}
-          </button>
-
-          {editingStudentId && (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="rounded-lg border border-gray-200 px-5 py-2 text-sm font-medium"
-            >
-              Cancel
-            </button>
-          )}
-        </div>
-      </form>
-
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 p-5">
-          <h2 className="font-semibold">Students</h2>
-        </div>
-
-        {loading ? (
-          <div className="p-6 text-sm text-gray-500">
-            Loading students...
-          </div>
-        ) : students.length === 0 ? (
-          <div className="p-6 text-sm text-gray-500">
-            No students have been registered yet.
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-200">
-            {students.map((student) => {
-              const enrollment = student.enrollments[0];
-
-              const fullName = [
-                student.firstName,
-                student.middleName,
-                student.lastName,
-              ]
-                .filter(Boolean)
-                .join(" ");
-
-              return (
-                <div
-                  key={student.id}
-                  className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between"
-                >
-                  <div>
-                    <p className="font-medium">{fullName}</p>
-
-                    <p className="text-sm text-gray-500">
-                      {student.admissionNumber}
-                      {enrollment
-                        ? ` • ${enrollment.class.name}`
-                        : ""}
-                    </p>
-
-                    {enrollment?.academicYear && (
-                      <p className="mt-1 text-xs text-gray-400">
-                        {enrollment.academicYear.name}
-                        {enrollment.rollNumber
-                          ? ` • Roll No. ${enrollment.rollNumber}`
-                          : ""}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleEdit(student)}
-                      disabled={deletingId === student.id}
-                      className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      Edit
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(student)}
-                      disabled={deletingId === student.id}
-                      className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-                    >
-                      {deletingId === student.id
-                        ? "Deleting..."
-                        : "Delete"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
+
+      {/* Search */}
+      <div className="rounded-xl border border-(--border) bg-(--surface) p-4">
+        <div className="relative">
+          <Search
+            size={18}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-(--muted)"
+          />
+
+          <input
+            type="text"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by name, admission number, phone, class..."
+            className="w-full rounded-lg border border-(--border) bg-white py-2.5 pl-10 pr-4 text-sm outline-none focus:border-(--primary-dark)"
+          />
+        </div>
+      </div>
+
+      {/* Student Table */}
+      <div className="overflow-hidden rounded-xl border border-(--border) bg-(--surface)">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-sm">
+            <thead>
+              <tr className="border-b border-(--border) bg-black/5 text-left">
+                <th className="px-5 py-4 font-semibold">
+                  Admission No.
+                </th>
+
+                <th className="px-5 py-4 font-semibold">
+                  Student
+                </th>
+
+                <th className="px-5 py-4 font-semibold">
+                  Class
+                </th>
+
+                <th className="px-5 py-4 font-semibold">
+                  Section
+                </th>
+
+                <th className="px-5 py-4 font-semibold">
+                  Roll
+                </th>
+
+                <th className="px-5 py-4 font-semibold">
+                  Academic Year
+                </th>
+
+                <th className="px-5 py-4 text-right font-semibold">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-5 py-10 text-center text-(--muted)"
+                  >
+                    Loading students...
+                  </td>
+                </tr>
+              ) : filteredStudents.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-5 py-10 text-center text-(--muted)"
+                  >
+                    {search
+                      ? "No students match your search."
+                      : "No students found."}
+                  </td>
+                </tr>
+              ) : (
+                filteredStudents.map((student) => {
+                  const enrollment =
+                    latestEnrollment(student);
+
+                  return (
+                    <tr
+                      key={student.id}
+                      className="border-b border-(--border) last:border-b-0 hover:bg-black/[0.02]"
+                    >
+                      <td className="px-5 py-4 font-medium">
+                        {student.admissionNumber}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <div className="font-medium text-(--primary-dark)">
+                          {studentFullName(student)}
+                        </div>
+
+                        {student.phone && (
+                          <div className="mt-1 text-xs text-(--muted)">
+                            {student.phone}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        {enrollment?.class?.name || "—"}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        {enrollment?.section?.name || "—"}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        {enrollment?.rollNumber ?? "—"}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        {enrollment?.academicYear?.name || "—"}
+                      </td>
+
+                      {/* ACTIONS */}
+                      <td className="px-5 py-4">
+                        <div className="flex items-center justify-end gap-2">
+                          {/* VIEW */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              goToProfile(student.id)
+                            }
+                            title="View student profile"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-(--border) px-3 py-2 text-xs font-semibold text-(--primary-dark) transition hover:bg-black/5"
+                          >
+                            <Eye size={15} />
+                            View
+                          </button>
+
+                          {/* EDIT */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openEditForm(student)
+                            }
+                            title="Edit student"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-(--border) px-3 py-2 text-xs font-semibold text-(--primary-dark) transition hover:bg-black/5"
+                          >
+                            <Pencil size={15} />
+                            Edit
+                          </button>
+
+                          {/* DELETE */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDelete(student)
+                            }
+                            title="Delete student"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                          >
+                            <Trash2 size={15} />
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Add/Edit Student Modal */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-(--surface) shadow-2xl">
+            {/* Modal Header */}
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-(--border) bg-(--surface) px-6 py-4">
+              <div>
+                <h2 className="text-lg font-bold text-(--primary-dark)">
+                  {editingStudent
+                    ? "Edit Student"
+                    : "Add Student"}
+                </h2>
+
+                {editingStudent && (
+                  <p className="mt-1 text-xs text-(--muted)">
+                    Select an academic year to edit that year's
+                    enrollment without changing other years.
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForm(false);
+                  setEditingStudent(null);
+                  setError("");
+                }}
+                className="rounded-lg p-2 text-(--muted) hover:bg-black/5"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form
+              onSubmit={handleSubmit}
+              className="space-y-6 p-6"
+            >
+              {/* Basic Information */}
+              <section>
+                <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-(--primary-dark)">
+                  Student Information
+                </h3>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <Field
+                    label="Admission Number"
+                    value={form.admissionNumber}
+                    onChange={(value) =>
+                      handleChange(
+                        "admissionNumber",
+                        value
+                      )
+                    }
+                    placeholder="Auto-generated if empty"
+                  />
+
+                  <Field
+                    label="First Name"
+                    required
+                    value={form.firstName}
+                    onChange={(value) =>
+                      handleChange("firstName", value)
+                    }
+                  />
+
+                  <Field
+                    label="Middle Name"
+                    value={form.middleName}
+                    onChange={(value) =>
+                      handleChange(
+                        "middleName",
+                        value
+                      )
+                    }
+                  />
+
+                  <Field
+                    label="Last Name"
+                    value={form.lastName}
+                    onChange={(value) =>
+                      handleChange("lastName", value)
+                    }
+                  />
+
+                  <Field
+                    label="Date of Birth"
+                    type="date"
+                    value={form.dateOfBirth}
+                    onChange={(value) =>
+                      handleChange(
+                        "dateOfBirth",
+                        value
+                      )
+                    }
+                  />
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">
+                      Gender
+                    </label>
+
+                    <select
+                      value={form.gender}
+                      onChange={(event) =>
+                        handleChange(
+                          "gender",
+                          event.target.value
+                        )
+                      }
+                      className="w-full rounded-lg border border-(--border) bg-white px-3 py-2.5 text-sm outline-none focus:border-(--primary-dark)"
+                    >
+                      <option value="">
+                        Select gender
+                      </option>
+                      <option value="Male">
+                        Male
+                      </option>
+                      <option value="Female">
+                        Female
+                      </option>
+                      <option value="Other">
+                        Other
+                      </option>
+                    </select>
+                  </div>
+
+                  <Field
+                    label="Phone"
+                    value={form.phone}
+                    onChange={(value) =>
+                      handleChange("phone", value)
+                    }
+                  />
+
+                  <Field
+                    label="Email"
+                    type="email"
+                    value={form.email}
+                    onChange={(value) =>
+                      handleChange("email", value)
+                    }
+                  />
+
+                  <Field
+                    label="Address"
+                    value={form.address}
+                    onChange={(value) =>
+                      handleChange(
+                        "address",
+                        value
+                      )
+                    }
+                  />
+                </div>
+              </section>
+
+              {/* Parent / Guardian */}
+              <section>
+                <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-(--primary-dark)">
+                  Parent / Guardian Information
+                </h3>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <Field
+                    label="Father's Name"
+                    value={form.fatherName}
+                    onChange={(value) =>
+                      handleChange(
+                        "fatherName",
+                        value
+                      )
+                    }
+                  />
+
+                  <Field
+                    label="Mother's Name"
+                    value={form.motherName}
+                    onChange={(value) =>
+                      handleChange(
+                        "motherName",
+                        value
+                      )
+                    }
+                  />
+
+                  <Field
+                    label="Guardian Name"
+                    value={form.guardianName}
+                    onChange={(value) =>
+                      handleChange(
+                        "guardianName",
+                        value
+                      )
+                    }
+                  />
+
+                  <Field
+                    label="Guardian Phone"
+                    value={form.guardianPhone}
+                    onChange={(value) =>
+                      handleChange(
+                        "guardianPhone",
+                        value
+                      )
+                    }
+                  />
+                </div>
+              </section>
+
+              {/* Enrollment */}
+              <section>
+                <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-(--primary-dark)">
+                  Enrollment
+                </h3>
+
+                {editingStudent &&
+                  editingStudent.enrollments.length > 0 && (
+                    <div className="mb-4 rounded-lg border border-(--border) bg-black/[0.02] p-3">
+                      <p className="text-xs font-semibold text-(--primary-dark)">
+                        Existing Academic History
+                      </p>
+
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {editingStudent.enrollments.map(
+                          (enrollment) => (
+                            <span
+                              key={enrollment.id}
+                              className="rounded-full border border-(--border) bg-white px-3 py-1 text-xs"
+                            >
+                              {enrollment.academicYear.name}
+                              {" — "}
+                              {enrollment.class.name}
+                              {enrollment.section
+                                ? ` — ${enrollment.section.name}`
+                                : ""}
+                            </span>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">
+                      Academic Year
+                      <span className="ml-1 text-red-500">
+                        *
+                      </span>
+                    </label>
+
+                    <select
+                      value={form.academicYearId}
+                      onChange={(event) =>
+                        handleAcademicYearChange(
+                          event.target.value
+                        )
+                      }
+                      className="w-full rounded-lg border border-(--border) bg-white px-3 py-2.5 text-sm outline-none focus:border-(--primary-dark)"
+                      required
+                    >
+                      <option value="">
+                        Select year
+                      </option>
+
+                      {academicYears.map((year) => (
+                        <option
+                          key={year.id}
+                          value={year.id}
+                        >
+                          {year.name}
+                          {year.isActive
+                            ? " (Active)"
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">
+                      Class
+                      <span className="ml-1 text-red-500">
+                        *
+                      </span>
+                    </label>
+
+                    <select
+                      value={form.classId}
+                      onChange={(event) =>
+                        handleChange(
+                          "classId",
+                          event.target.value
+                        )
+                      }
+                      className="w-full rounded-lg border border-(--border) bg-white px-3 py-2.5 text-sm outline-none focus:border-(--primary-dark)"
+                      required
+                    >
+                      <option value="">
+                        Select class
+                      </option>
+
+                      {classes.map((item) => (
+                        <option
+                          key={item.id}
+                          value={item.id}
+                        >
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">
+                      Section
+                    </label>
+
+                    <select
+                      value={form.sectionId}
+                      onChange={(event) =>
+                        handleChange(
+                          "sectionId",
+                          event.target.value
+                        )
+                      }
+                      className="w-full rounded-lg border border-(--border) bg-white px-3 py-2.5 text-sm outline-none focus:border-(--primary-dark)"
+                    >
+                      <option value="">
+                        No section
+                      </option>
+
+                      {sections.map((section) => (
+                        <option
+                          key={section.id}
+                          value={section.id}
+                        >
+                          {section.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <Field
+                    label="Roll Number"
+                    type="number"
+                    value={form.rollNumber}
+                    onChange={(value) =>
+                      handleChange(
+                        "rollNumber",
+                        value
+                      )
+                    }
+                  />
+                </div>
+              </section>
+
+              {/* Buttons */}
+              <div className="flex justify-end gap-3 border-t border-(--border) pt-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForm(false);
+                    setEditingStudent(null);
+                    setError("");
+                  }}
+                  className="rounded-lg border border-(--border) px-4 py-2.5 text-sm font-semibold hover:bg-black/5"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-lg bg-(--primary-dark) px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving
+                    ? "Saving..."
+                    : editingStudent
+                    ? "Update Student"
+                    : "Create Student"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  type = "text",
+  required = false,
+  placeholder = "",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  required?: boolean;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-sm font-medium">
+        {label}
+
+        {required && (
+          <span className="ml-1 text-red-500">*</span>
+        )}
+      </label>
+
+      <input
+        type={type}
+        value={value}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
+        placeholder={placeholder}
+        required={required}
+        className="w-full rounded-lg border border-(--border) bg-white px-3 py-2.5 text-sm outline-none focus:border-(--primary-dark)"
+      />
     </div>
   );
 }

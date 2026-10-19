@@ -1,6 +1,34 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+function parseOptionalDate(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const date = new Date(String(value));
+
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+
+  return date;
+}
+
+function parseOptionalRollNumber(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const number = Number(value);
+
+  if (!Number.isInteger(number) || number < 1) {
+    return undefined;
+  }
+
+  return number;
+}
+
 export async function GET() {
   try {
     const school = await prisma.school.findFirst();
@@ -21,6 +49,11 @@ export async function GET() {
           include: {
             academicYear: true,
             class: true,
+          },
+          orderBy: {
+            academicYear: {
+              startDate: "desc",
+            },
           },
         },
       },
@@ -53,34 +86,85 @@ export async function POST(request: Request) {
 
     const body = await request.json();
 
-    const firstName = body.firstName?.trim();
-    const middleName = body.middleName?.trim() || null;
-    const lastName = body.lastName?.trim() || null;
-    const dateOfBirth = body.dateOfBirth
-      ? new Date(body.dateOfBirth)
-      : null;
-    const gender = body.gender?.trim() || null;
-    const address = body.address?.trim() || null;
-    const phone = body.phone?.trim() || null;
-    const email = body.email?.trim() || null;
+    const firstName =
+      typeof body.firstName === "string"
+        ? body.firstName.trim()
+        : "";
 
-    const fatherName = body.fatherName?.trim() || null;
-    const motherName = body.motherName?.trim() || null;
-    const guardianName = body.guardianName?.trim() || null;
-    const guardianPhone = body.guardianPhone?.trim() || null;
+    const middleName =
+      typeof body.middleName === "string"
+        ? body.middleName.trim() || null
+        : null;
+
+    const lastName =
+      typeof body.lastName === "string"
+        ? body.lastName.trim() || null
+        : null;
+
+    const gender =
+      typeof body.gender === "string"
+        ? body.gender.trim() || null
+        : null;
+
+    const address =
+      typeof body.address === "string"
+        ? body.address.trim() || null
+        : null;
+
+    const phone =
+      typeof body.phone === "string"
+        ? body.phone.trim() || null
+        : null;
+
+    const email =
+      typeof body.email === "string"
+        ? body.email.trim() || null
+        : null;
+
+    const fatherName =
+      typeof body.fatherName === "string"
+        ? body.fatherName.trim() || null
+        : null;
+
+    const motherName =
+      typeof body.motherName === "string"
+        ? body.motherName.trim() || null
+        : null;
+
+    const guardianName =
+      typeof body.guardianName === "string"
+        ? body.guardianName.trim() || null
+        : null;
+
+    const guardianPhone =
+      typeof body.guardianPhone === "string"
+        ? body.guardianPhone.trim() || null
+        : null;
 
     const academicYearId = body.academicYearId;
     const classId = body.classId;
-    const rollNumber =
-      body.rollNumber !== undefined &&
-      body.rollNumber !== null &&
-      body.rollNumber !== ""
-        ? Number(body.rollNumber)
-        : null;
+
+    const dateOfBirth = parseOptionalDate(body.dateOfBirth);
+
+    const rollNumber = parseOptionalRollNumber(
+      body.rollNumber
+    );
 
     if (!firstName) {
       return NextResponse.json(
         { error: "First name is required." },
+        { status: 400 }
+      );
+    }
+
+    if (
+      body.dateOfBirth !== undefined &&
+      body.dateOfBirth !== null &&
+      body.dateOfBirth !== "" &&
+      dateOfBirth === undefined
+    ) {
+      return NextResponse.json(
+        { error: "Invalid date of birth." },
         { status: 400 }
       );
     }
@@ -99,19 +183,23 @@ export async function POST(request: Request) {
       );
     }
 
-    if (rollNumber !== null && !Number.isInteger(rollNumber)) {
+    if (rollNumber === undefined) {
       return NextResponse.json(
-        { error: "Roll number must be a whole number." },
+        {
+          error:
+            "Roll number must be a whole number greater than 0.",
+        },
         { status: 400 }
       );
     }
 
-    const academicYear = await prisma.academicYear.findFirst({
-      where: {
-        id: academicYearId,
-        schoolId: school.id,
-      },
-    });
+    const academicYear =
+      await prisma.academicYear.findFirst({
+        where: {
+          id: academicYearId,
+          schoolId: school.id,
+        },
+      });
 
     if (!academicYear) {
       return NextResponse.json(
@@ -134,30 +222,42 @@ export async function POST(request: Request) {
       );
     }
 
-    // Generate the next admission number.
-    const latestStudent = await prisma.student.findFirst({
-      where: {
-        schoolId: school.id,
-      },
-      orderBy: {
-        admissionNumber: "desc",
-      },
-      select: {
-        admissionNumber: true,
-      },
-    });
+    /*
+     * Generate the next admission number.
+     *
+     * Current format:
+     * ADM-0001
+     * ADM-0002
+     * ADM-0003
+     */
+
+    const latestStudent =
+      await prisma.student.findFirst({
+        where: {
+          schoolId: school.id,
+        },
+        orderBy: {
+          admissionNumber: "desc",
+        },
+        select: {
+          admissionNumber: true,
+        },
+      });
 
     let nextNumber = 1;
 
     if (latestStudent) {
-      const match = latestStudent.admissionNumber.match(/(\d+)$/);
+      const match =
+        latestStudent.admissionNumber.match(/(\d+)$/);
 
       if (match) {
         nextNumber = Number(match[1]) + 1;
       }
     }
 
-    const admissionNumber = `ADM-${String(nextNumber).padStart(4, "0")}`;
+    const admissionNumber = `ADM-${String(
+      nextNumber
+    ).padStart(4, "0")}`;
 
     const student = await prisma.student.create({
       data: {
@@ -166,7 +266,7 @@ export async function POST(request: Request) {
         firstName,
         middleName,
         lastName,
-        dateOfBirth,
+        dateOfBirth: dateOfBirth ?? null,
         gender,
         address,
         phone,
@@ -189,11 +289,18 @@ export async function POST(request: Request) {
             academicYear: true,
             class: true,
           },
+          orderBy: {
+            academicYear: {
+              startDate: "desc",
+            },
+          },
         },
       },
     });
 
-    return NextResponse.json(student, { status: 201 });
+    return NextResponse.json(student, {
+      status: 201,
+    });
   } catch (error) {
     console.error("Failed to create student:", error);
 

@@ -1,0 +1,593 @@
+
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+
+    const { searchParams } = new URL(request.url);
+    const academicYearId = searchParams.get("academicYearId");
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Student ID is required." },
+        { status: 400 }
+      );
+    }
+
+    // ---------------------------------------------------------
+    // STUDENT
+    // ---------------------------------------------------------
+
+    const student = await prisma.student.findUnique({
+      where: {
+        id,
+      },
+      include: {
+        enrollments: {
+          include: {
+            academicYear: true,
+            class: true,
+            section: true,
+          },
+          orderBy: {
+            academicYear: {
+              startDate: "desc",
+            },
+          },
+        },
+      },
+    });
+
+    if (!student) {
+      return NextResponse.json(
+        { error: "Student not found." },
+        { status: 404 }
+      );
+    }
+
+    // ---------------------------------------------------------
+    // SELECT ACADEMIC YEAR
+    // ---------------------------------------------------------
+
+    const selectedEnrollment = academicYearId
+      ? student.enrollments.find(
+          (enrollment) =>
+            enrollment.academicYearId === academicYearId
+        )
+      : student.enrollments[0];
+
+    const selectedAcademicYearId =
+      academicYearId || selectedEnrollment?.academicYearId;
+
+    // Student has no academic enrollment yet
+    if (!selectedAcademicYearId) {
+      return NextResponse.json({
+        student: {
+          id: student.id,
+          admissionNumber: student.admissionNumber,
+          firstName: student.firstName,
+          middleName: student.middleName,
+          lastName: student.lastName,
+          dateOfBirth: student.dateOfBirth,
+          gender: student.gender,
+          address: student.address,
+          phone: student.phone,
+          email: student.email,
+          fatherName: student.fatherName,
+          motherName: student.motherName,
+          guardianName: student.guardianName,
+          guardianPhone: student.guardianPhone,
+        },
+
+        academicYears: [],
+
+        selectedAcademicYear: null,
+
+        enrollment: null,
+
+        financial: {
+          summary: {
+            totalBilled: 0,
+            totalDiscounts: 0,
+            totalPaid: 0,
+            totalWaivers: 0,
+            totalCreditsApplied: 0,
+            remainingDue: 0,
+          },
+          bills: [],
+          payments: [],
+          discounts: [],
+          charges: [],
+          credits: [],
+        },
+
+        academic: {
+          exams: [],
+        },
+      });
+    }
+
+    // ---------------------------------------------------------
+    // ACADEMIC YEAR
+    // ---------------------------------------------------------
+
+    const academicYear = await prisma.academicYear.findUnique({
+      where: {
+        id: selectedAcademicYearId,
+      },
+    });
+
+    if (!academicYear) {
+      return NextResponse.json(
+        { error: "Academic year not found." },
+        { status: 404 }
+      );
+    }
+
+    if (academicYear.schoolId !== student.schoolId) {
+      return NextResponse.json(
+        { error: "Invalid academic year." },
+        { status: 400 }
+      );
+    }
+
+    // ---------------------------------------------------------
+    // ENROLLMENT FOR SELECTED YEAR
+    // ---------------------------------------------------------
+
+    const enrollment = student.enrollments.find(
+      (item) =>
+        item.academicYearId === selectedAcademicYearId
+    );
+
+    // ---------------------------------------------------------
+    // FINANCIAL RECORDS
+    // ---------------------------------------------------------
+
+    const bills = await prisma.bill.findMany({
+      where: {
+        studentId: student.id,
+        academicYearId: selectedAcademicYearId,
+      },
+      include: {
+        items: true,
+        payments: true,
+        creditApplications: {
+          include: {
+            credit: true,
+          },
+        },
+      },
+      orderBy: {
+        billingDate: "desc",
+      },
+    });
+
+    const discounts = await prisma.studentDiscount.findMany({
+      where: {
+        studentId: student.id,
+        academicYearId: selectedAcademicYearId,
+      },
+      include: {
+        feeTypes: true,
+      },
+      orderBy: {
+        startDate: "desc",
+      },
+    });
+
+    const charges = await prisma.studentCharge.findMany({
+      where: {
+        studentId: student.id,
+        academicYearId: selectedAcademicYearId,
+      },
+      orderBy: {
+        startDate: "desc",
+      },
+    });
+
+    const credits = await prisma.studentCredit.findMany({
+      where: {
+        studentId: student.id,
+        academicYearId: selectedAcademicYearId,
+      },
+      include: {
+        applications: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    // ---------------------------------------------------------
+    // FINANCIAL CALCULATIONS
+    // ---------------------------------------------------------
+
+    let totalBilled = 0;
+    let totalDiscounts = 0;
+    let totalPaid = 0;
+    let totalWaivers = 0;
+    let totalCreditsApplied = 0;
+
+    const formattedBills = bills.map((bill) => {
+      const totalAmount = Number(bill.totalAmount);
+      const discountAmount = Number(bill.discountAmount);
+      const paidAmount = Number(bill.paidAmount);
+
+      const waiverAmount = bill.payments.reduce(
+        (sum, payment) =>
+          sum + Number(payment.waiverAmount),
+        0
+      );
+
+      const creditApplied =
+        bill.creditApplications.reduce(
+          (sum, application) =>
+            sum + Number(application.amount),
+          0
+        );
+
+      const remainingAmount = Math.max(
+        0,
+        totalAmount -
+          paidAmount -
+          waiverAmount -
+          creditApplied
+      );
+
+      totalBilled += totalAmount;
+      totalDiscounts += discountAmount;
+      totalPaid += paidAmount;
+      totalWaivers += waiverAmount;
+      totalCreditsApplied += creditApplied;
+
+      return {
+        id: bill.id,
+        billNumber: bill.billNumber,
+        billingDate: bill.billingDate,
+        dueDate: bill.dueDate,
+        periodStart: bill.periodStart,
+        periodEnd: bill.periodEnd,
+
+        totalAmount,
+        discountAmount,
+        paidAmount,
+        waiverAmount,
+        creditApplied,
+        remainingAmount,
+
+        status: bill.status,
+        notes: bill.notes,
+
+        items: bill.items.map((item) => ({
+          id: item.id,
+          feeType: item.feeType,
+          description: item.description,
+          quantity: Number(item.quantity),
+          rate: Number(item.rate),
+          amount: Number(item.amount),
+          discountAmount: Number(
+            item.discountAmount
+          ),
+          discountPercent: Number(
+            item.discountPercent
+          ),
+          netAmount: Number(item.netAmount),
+        })),
+      };
+    });
+
+    const formattedPayments = bills
+      .flatMap((bill) =>
+        bill.payments.map((payment) => ({
+          id: payment.id,
+          billId: bill.id,
+          billNumber: bill.billNumber,
+          amount: Number(payment.amount),
+          paymentDate: payment.paymentDate,
+          method: payment.method,
+          reference: payment.reference,
+          notes: payment.notes,
+          waiverAmount: Number(
+            payment.waiverAmount
+          ),
+          waiverReason: payment.waiverReason,
+        }))
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.paymentDate).getTime() -
+          new Date(a.paymentDate).getTime()
+      );
+
+    const remainingDue = Math.max(
+      0,
+      totalBilled -
+        totalPaid -
+        totalWaivers -
+        totalCreditsApplied
+    );
+
+    // ---------------------------------------------------------
+    // ACADEMIC RECORDS
+    // ---------------------------------------------------------
+    //
+    // IMPORTANT:
+    // We do NOT query Mark separately using examSubject.
+    //
+    // Instead:
+    //
+    // Exam
+    //   ↓
+    // ExamSubject
+    //   ↓
+    // Mark
+    //
+    // This avoids the TypeScript/Prisma issue you were seeing.
+    // ---------------------------------------------------------
+
+    let formattedExams: Array<any> = [];
+
+    if (enrollment) {
+      const exams = await prisma.exam.findMany({
+        where: {
+          classId: enrollment.classId,
+
+          term: {
+            academicYearId: selectedAcademicYearId,
+          },
+        },
+
+        include: {
+          term: true,
+
+          subjects: {
+            include: {
+              subject: true,
+
+              marks: {
+                where: {
+                  studentId: student.id,
+                },
+              },
+            },
+          },
+        },
+
+        orderBy: [
+          {
+            term: {
+              order: "asc",
+            },
+          },
+          {
+            startDate: "asc",
+          },
+        ],
+      });
+
+      formattedExams = exams.map((exam) => {
+        const subjects = exam.subjects.map(
+          (examSubject) => {
+            const mark = examSubject.marks[0];
+
+            const theoryMarks = mark
+              ? Number(mark.theoryMarks)
+              : null;
+
+            const practicalMarks = mark
+              ? Number(mark.practicalMarks)
+              : null;
+
+            const totalMarks =
+              theoryMarks !== null &&
+              practicalMarks !== null
+                ? theoryMarks + practicalMarks
+                : null;
+
+            return {
+              id: examSubject.id,
+
+              subject: {
+                id: examSubject.subject.id,
+                name: examSubject.subject.name,
+                code: examSubject.subject.code,
+              },
+
+              theoryFullMarks: Number(
+                examSubject.theoryFullMarks
+              ),
+
+              practicalFullMarks: Number(
+                examSubject.practicalFullMarks
+              ),
+
+              theoryMarks,
+              practicalMarks,
+              totalMarks,
+            };
+          }
+        );
+
+        return {
+          id: exam.id,
+          name: exam.name,
+
+          term: {
+            id: exam.term.id,
+            name: exam.term.name,
+            order: exam.term.order,
+          },
+
+          startDate: exam.startDate,
+          endDate: exam.endDate,
+
+          subjects,
+        };
+      });
+    }
+
+    // ---------------------------------------------------------
+    // RESPONSE
+    // ---------------------------------------------------------
+
+    return NextResponse.json({
+      student: {
+        id: student.id,
+        admissionNumber: student.admissionNumber,
+        firstName: student.firstName,
+        middleName: student.middleName,
+        lastName: student.lastName,
+        dateOfBirth: student.dateOfBirth,
+        gender: student.gender,
+        address: student.address,
+        phone: student.phone,
+        email: student.email,
+        fatherName: student.fatherName,
+        motherName: student.motherName,
+        guardianName: student.guardianName,
+        guardianPhone: student.guardianPhone,
+      },
+
+      // Every year in which this student has an enrollment
+      academicYears: student.enrollments.map(
+        (item) => ({
+          id: item.academicYear.id,
+          name: item.academicYear.name,
+          startDate: item.academicYear.startDate,
+          endDate: item.academicYear.endDate,
+          isActive: item.academicYear.isActive,
+
+          class: {
+            id: item.class.id,
+            name: item.class.name,
+          },
+
+          section: item.section
+            ? {
+                id: item.section.id,
+                name: item.section.name,
+              }
+            : null,
+
+          rollNumber: item.rollNumber,
+        })
+      ),
+
+      selectedAcademicYear: {
+        id: academicYear.id,
+        name: academicYear.name,
+        startDate: academicYear.startDate,
+        endDate: academicYear.endDate,
+      },
+
+      enrollment: enrollment
+        ? {
+            id: enrollment.id,
+
+            class: {
+              id: enrollment.class.id,
+              name: enrollment.class.name,
+            },
+
+            section: enrollment.section
+              ? {
+                  id: enrollment.section.id,
+                  name: enrollment.section.name,
+                }
+              : null,
+
+            rollNumber: enrollment.rollNumber,
+          }
+        : null,
+
+      financial: {
+        summary: {
+          totalBilled,
+          totalDiscounts,
+          totalPaid,
+          totalWaivers,
+          totalCreditsApplied,
+          remainingDue,
+        },
+
+        bills: formattedBills,
+
+        payments: formattedPayments,
+
+        discounts: discounts.map(
+          (discount) => ({
+            id: discount.id,
+            name: discount.name,
+            percentage: Number(
+              discount.percentage
+            ),
+            startDate: discount.startDate,
+            endDate: discount.endDate,
+            isActive: discount.isActive,
+            notes: discount.notes,
+
+            feeTypes: discount.feeTypes.map(
+              (item) => item.feeType
+            ),
+          })
+        ),
+
+        charges: charges.map(
+          (charge) => ({
+            id: charge.id,
+            description: charge.description,
+            quantity: Number(charge.quantity),
+            rate: Number(charge.rate),
+            amount: Number(charge.amount),
+            feeType: charge.feeType,
+            frequency: charge.frequency,
+            startDate: charge.startDate,
+            endDate: charge.endDate,
+            notes: charge.notes,
+          })
+        ),
+
+        credits: credits.map(
+          (credit) => ({
+            id: credit.id,
+            amount: Number(credit.amount),
+            appliedAmount: Number(
+              credit.appliedAmount
+            ),
+            remainingAmount: Math.max(
+              0,
+              Number(credit.amount) -
+                Number(credit.appliedAmount)
+            ),
+            source: credit.source,
+            notes: credit.notes,
+            createdAt: credit.createdAt,
+          })
+        ),
+      },
+
+      academic: {
+        exams: formattedExams,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Failed to fetch student profile:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          "Failed to fetch student profile.",
+      },
+      { status: 500 }
+    );
+  }
+}
