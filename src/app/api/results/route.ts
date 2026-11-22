@@ -86,6 +86,13 @@ export async function GET(request: Request) {
       );
     }
 
+    if (!exam.isPublished) {
+      return NextResponse.json(
+        { error: "Results have not been published for this exam." },
+        { status: 409 },
+      );
+    }
+
     const gradeScale =
       await prisma.gradeScale.findUnique({
         where: {
@@ -136,6 +143,38 @@ export async function GET(request: Request) {
     },
   ],
 });
+
+    const enrolledStudentIds = new Set(
+      students.map((student) => student.id),
+    );
+    const expectedMarkCount =
+      students.length * exam.subjects.length;
+    const recordedMarkCount = exam.subjects.reduce(
+      (count, examSubject) =>
+        count +
+        examSubject.marks.filter((mark) =>
+          enrolledStudentIds.has(mark.studentId),
+        ).length,
+      0,
+    );
+
+    if (
+      exam.subjects.length === 0 ||
+      students.length === 0 ||
+      recordedMarkCount !== expectedMarkCount
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Results cannot be calculated until every enrolled student has a mark for every exam subject.",
+          missingMarks: Math.max(
+            0,
+            expectedMarkCount - recordedMarkCount,
+          ),
+        },
+        { status: 409 },
+      );
+    }
 
     const results = students.map((student) => {
       let totalObtained = 0;

@@ -7,6 +7,15 @@ type RouteContext = {
   }>;
 };
 
+class ExamStateError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 export async function GET(
   _request: Request,
   { params }: RouteContext
@@ -77,6 +86,13 @@ export async function PATCH(
       return NextResponse.json(
         { error: "Exam not found." },
         { status: 404 }
+      );
+    }
+
+    if (existingExam.isPublished || existingExam.isLocked) {
+      return NextResponse.json(
+        { error: "Published or locked exams cannot be edited." },
+        { status: 409 },
       );
     }
 
@@ -163,32 +179,57 @@ export async function PATCH(
       );
     }
 
-    const updatedExam = await prisma.exam.update({
-      where: {
-        id,
-      },
-      data: {
-        name,
-        startDate,
-        endDate,
-      },
-      include: {
-        term: {
-          include: {
-            academicYear: true,
+    const updatedExam = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${`exam:${id}`}, 0)
+        )
+      `;
+
+      const currentExam = await tx.exam.findUnique({
+        where: { id },
+        select: { isPublished: true, isLocked: true },
+      });
+
+      if (!currentExam) {
+        throw new ExamStateError("Exam not found.", 404);
+      }
+
+      if (currentExam.isPublished || currentExam.isLocked) {
+        throw new ExamStateError(
+          "Published or locked exams cannot be edited.",
+          409,
+        );
+      }
+
+      return tx.exam.update({
+        where: { id },
+        data: { name, startDate, endDate },
+        include: {
+          term: {
+            include: {
+              academicYear: true,
+            },
+          },
+          class: true,
+          subjects: {
+            include: {
+              subject: true,
+            },
           },
         },
-        class: true,
-        subjects: {
-          include: {
-            subject: true,
-          },
-        },
-      },
+      });
     });
 
     return NextResponse.json(updatedExam);
   } catch (error) {
+    if (error instanceof ExamStateError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    }
+
     console.error("Failed to update exam:", error);
 
     return NextResponse.json(
@@ -205,24 +246,56 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    const exam = await prisma.exam.findUnique({
-      where: {
-        id,
-      },
+    const deleted = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${`exam:${id}`}, 0)
+        )
+      `;
+
+      const exam = await tx.exam.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          isPublished: true,
+          isLocked: true,
+        },
+      });
+
+      if (!exam) {
+        return "NOT_FOUND" as const;
+      }
+
+      const markCount = await tx.mark.count({
+        where: {
+          examSubject: { examId: id },
+        },
+      });
+
+      if (exam.isPublished || exam.isLocked || markCount > 0) {
+        return "HAS_RESULTS" as const;
+      }
+
+      await tx.exam.delete({ where: { id } });
+      return "DELETED" as const;
     });
 
-    if (!exam) {
+    if (deleted === "NOT_FOUND") {
       return NextResponse.json(
         { error: "Exam not found." },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
-    await prisma.exam.delete({
-      where: {
-        id,
-      },
-    });
+    if (deleted === "HAS_RESULTS") {
+      return NextResponse.json(
+        {
+          error:
+            "This exam cannot be deleted because it has published, locked, or recorded marks.",
+        },
+        { status: 409 },
+      );
+    }
 
     return NextResponse.json({
       message: "Exam deleted successfully.",

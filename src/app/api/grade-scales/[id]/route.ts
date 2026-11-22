@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { validateGradeScaleEntries } from "@/lib/grade-scale-validation";
 
 type RouteContext = {
   params: Promise<{
@@ -76,58 +77,12 @@ export async function PUT(
     }
 
     const entries = body.entries;
-
-    for (const entry of entries) {
-      const minPercentage = Number(entry.minPercentage);
-      const maxPercentage = Number(entry.maxPercentage);
-      const grade = String(entry.grade ?? "").trim();
-      const gradePoint = Number(entry.gradePoint);
-
-      if (
-        !Number.isFinite(minPercentage) ||
-        !Number.isFinite(maxPercentage) ||
-        !Number.isFinite(gradePoint) ||
-        !grade
-      ) {
-        return NextResponse.json(
-          { error: "Invalid grade scale entry." },
-          { status: 400 }
-        );
-      }
-
-      if (
-        minPercentage < 0 ||
-        minPercentage > 100 ||
-        maxPercentage < 0 ||
-        maxPercentage > 100
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "Percentage values must be between 0 and 100.",
-          },
-          { status: 400 }
-        );
-      }
-
-      if (minPercentage > maxPercentage) {
-        return NextResponse.json(
-          {
-            error:
-              "Minimum percentage cannot exceed maximum percentage.",
-          },
-          { status: 400 }
-        );
-      }
-
-      if (gradePoint < 0) {
-        return NextResponse.json(
-          {
-            error: "Grade point cannot be negative.",
-          },
-          { status: 400 }
-        );
-      }
+    const validationError = validateGradeScaleEntries(entries);
+    if (validationError) {
+      return NextResponse.json(
+        { error: validationError },
+        { status: 400 },
+      );
     }
 
     const existingScale =

@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+class MarkRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -189,17 +198,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const examSubject =
-      await prisma.examSubject.findUnique({
-        where: {
-          id: examSubjectId,
-        },
-        include: {
-          exam: true,
-        },
-      });
+    const examSubjectPreview = await prisma.examSubject.findUnique({
+      where: { id: examSubjectId },
+      select: { examId: true },
+    });
 
-    if (!examSubject) {
+    if (!examSubjectPreview) {
       return NextResponse.json(
         {
           error: "Exam subject not found.",
@@ -208,96 +212,82 @@ export async function POST(request: Request) {
       );
     }
 
-    const exam = await prisma.exam.findUnique({
-      where: {
-        id: examSubject.examId,
-      },
-      select: {
-        isLocked: true,
-      },
-    });
+    const mark = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${`exam:${examSubjectPreview.examId}`}, 0)
+        )
+      `;
 
-    if (exam?.isLocked) {
-      return NextResponse.json(
-        {
-          error:
-            "This exam is locked and its marks cannot be changed.",
-        },
-        { status: 409 }
-      );
-    }
-
-    if (
-      theoryMarks >
-      Number(examSubject.theoryFullMarks)
-    ) {
-      return NextResponse.json(
-        {
-          error: `Theory marks cannot exceed ${examSubject.theoryFullMarks}.`,
-        },
-        { status: 400 }
-      );
-    }
-
-    if (
-      practicalMarks >
-      Number(examSubject.practicalFullMarks)
-    ) {
-      return NextResponse.json(
-        {
-          error: `Practical marks cannot exceed ${examSubject.practicalFullMarks}.`,
-        },
-        { status: 400 }
-      );
-    }
-
-    const enrollment =
-      await prisma.enrollment.findFirst({
-        where: {
-          studentId,
-          academicYearId:
-            (
-              await prisma.exam.findUnique({
-                where: {
-                  id: examSubject.examId,
-                },
-                include: {
-                  term: true,
-                },
-              })
-            )?.term.academicYearId,
-          classId:
-            examSubject.exam.classId,
+      const examSubject = await tx.examSubject.findUnique({
+        where: { id: examSubjectId },
+        include: {
+          exam: {
+            include: {
+              term: true,
+            },
+          },
         },
       });
 
-    if (!enrollment) {
-      return NextResponse.json(
-        {
-          error:
-            "Student is not enrolled in this class and academic year.",
-        },
-        { status: 400 }
-      );
-    }
+      if (!examSubject) {
+        throw new MarkRequestError("Exam subject not found.", 404);
+      }
 
-    const mark = await prisma.mark.upsert({
-      where: {
-        examSubjectId_studentId: {
+      if (examSubject.exam.isLocked) {
+        throw new MarkRequestError(
+          "This exam is locked and its marks cannot be changed.",
+          409,
+        );
+      }
+
+      if (theoryMarks > Number(examSubject.theoryFullMarks)) {
+        throw new MarkRequestError(
+          `Theory marks cannot exceed ${examSubject.theoryFullMarks}.`,
+          400,
+        );
+      }
+
+      if (practicalMarks > Number(examSubject.practicalFullMarks)) {
+        throw new MarkRequestError(
+          `Practical marks cannot exceed ${examSubject.practicalFullMarks}.`,
+          400,
+        );
+      }
+
+      const enrollment = await tx.enrollment.findFirst({
+        where: {
+          studentId,
+          academicYearId: examSubject.exam.term.academicYearId,
+          classId: examSubject.exam.classId,
+        },
+      });
+
+      if (!enrollment) {
+        throw new MarkRequestError(
+          "Student is not enrolled in this class and academic year.",
+          400,
+        );
+      }
+
+      return tx.mark.upsert({
+        where: {
+          examSubjectId_studentId: {
+            examSubjectId,
+            studentId,
+          },
+        },
+        update: {
+          theoryMarks,
+          practicalMarks,
+        },
+        create: {
           examSubjectId,
           studentId,
+          theoryMarks,
+          practicalMarks,
         },
-      },
-      update: {
-        theoryMarks,
-        practicalMarks,
-      },
-      create: {
-        examSubjectId,
-        studentId,
-        theoryMarks,
-        practicalMarks,
-      },
+      });
     });
 
     return NextResponse.json({
@@ -310,6 +300,13 @@ export async function POST(request: Request) {
         mark.practicalMarks.toString(),
     });
   } catch (error) {
+    if (error instanceof MarkRequestError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    }
+
     console.error(
       "Failed to save marks:",
       error

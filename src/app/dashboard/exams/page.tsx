@@ -57,6 +57,8 @@ type Exam = {
   name: string;
   startDate: string | null;
   endDate: string | null;
+  isPublished: boolean;
+  isLocked: boolean;
   class: SchoolClass;
   term: {
     id: string;
@@ -111,6 +113,9 @@ export default function ExamsPage() {
   const [saving, setSaving] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(
+    null
+  );
+  const [publishingId, setPublishingId] = useState<string | null>(
     null
   );
 
@@ -589,6 +594,48 @@ export default function ExamsPage() {
     }
   }
 
+  async function handlePublishExam(exam: Exam) {
+    const confirmed = window.confirm(
+      `Publish results for "${exam.name}" and lock its marks?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setPublishingId(exam.id);
+      setError("");
+      setSuccess("");
+
+      const response = await fetch(
+        `/api/exams/${exam.id}/publish`,
+        { method: "POST" },
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Failed to publish exam results.",
+        );
+      }
+
+      setExams((current) =>
+        current.map((item) =>
+          item.id === exam.id ? data.exam : item,
+        ),
+      );
+      setSuccess("Results published and marks locked.");
+    } catch (error) {
+      console.error(error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to publish exam results.",
+      );
+    } finally {
+      setPublishingId(null);
+    }
+  }
+
   const selectedClass = classes.find(
     (schoolClass) => schoolClass.id === classId
   );
@@ -1024,11 +1071,29 @@ export default function ExamsPage() {
                         : "subjects"}
                     </span>
 
+                    {exam.isPublished ? (
+                      <span className="rounded-full bg-green-100 px-3 py-1.5 text-sm font-medium text-green-700">
+                        Published & locked
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handlePublishExam(exam)}
+                        disabled={publishingId === exam.id}
+                        className="rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-sm text-green-700 hover:bg-green-100 disabled:opacity-50"
+                      >
+                        {publishingId === exam.id
+                          ? "Publishing..."
+                          : "Publish & lock"}
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() =>
                         startEditingExam(exam)
                       }
+                      disabled={exam.isPublished || exam.isLocked}
                       className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
                     >
                       Edit
@@ -1040,7 +1105,9 @@ export default function ExamsPage() {
                         handleDeleteExam(exam)
                       }
                       disabled={
-                        deletingId === exam.id
+                        deletingId === exam.id ||
+                        exam.isPublished ||
+                        exam.isLocked
                       }
                       className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm text-red-600 hover:bg-red-100 disabled:opacity-50"
                     >
