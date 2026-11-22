@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { BS_MONTHS, formatBSDate } from "@/lib/nepali-date";
 
 type AcademicYear = {
   id: string;
@@ -63,8 +64,10 @@ type Bill = {
   billNumber: string;
   billingDate: string;
   dueDate: string | null;
-  periodStart: string;
-  periodEnd: string;
+  periodStartYear: number;
+  periodStartMonth: number;
+  periodEndYear: number;
+  periodEndMonth: number;
 
   totalAmount: number;
   discountAmount: number;
@@ -190,18 +193,7 @@ function formatMoney(value: number) {
 function formatDate(
   value: string | null | undefined
 ) {
-  if (!value) {
-    return "—";
-  }
-
-  return new Date(value).toLocaleDateString(
-    "en-GB",
-    {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }
-  );
+  return formatBSDate(value);
 }
 
 function getFullName(student: Student) {
@@ -613,13 +605,10 @@ export default function StudentProfilePage() {
                       </td>
 
                       <td className="px-5 py-4">
-                        {formatDate(
-                          bill.periodStart
-                        )}{" "}
-                        –{" "}
-                        {formatDate(
-                          bill.periodEnd
-                        )}
+                        {bill.periodStartYear === bill.periodEndYear &&
+                        bill.periodStartMonth === bill.periodEndMonth
+                          ? `${BS_MONTHS[bill.periodStartMonth - 1]} ${bill.periodStartYear}`
+                          : `${BS_MONTHS[bill.periodStartMonth - 1]} ${bill.periodStartYear} – ${BS_MONTHS[bill.periodEndMonth - 1]} ${bill.periodEndYear}`}
                       </td>
 
                       <td className="px-5 py-4 text-right">
@@ -1095,4 +1084,3 @@ function EmptyState({
     </div>
   );
 }
-

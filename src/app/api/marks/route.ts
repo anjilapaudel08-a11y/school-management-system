@@ -208,6 +208,25 @@ export async function POST(request: Request) {
       );
     }
 
+    const exam = await prisma.exam.findUnique({
+      where: {
+        id: examSubject.examId,
+      },
+      select: {
+        isLocked: true,
+      },
+    });
+
+    if (exam?.isLocked) {
+      return NextResponse.json(
+        {
+          error:
+            "This exam is locked and its marks cannot be changed.",
+        },
+        { status: 409 }
+      );
+    }
+
     if (
       theoryMarks >
       Number(examSubject.theoryFullMarks)

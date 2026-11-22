@@ -33,6 +33,7 @@ type SubjectResult = {
 
 type StudentResult = {
   studentId: string;
+  admissionNumber: string;
   studentName: string;
   rollNumber: number | null;
   subjects: SubjectResult[];
@@ -302,7 +303,7 @@ export default function ReportCardPage() {
 
         <div className="py-5 text-center">
           <h2 className="text-xl font-bold uppercase tracking-wide text-gray-900">
-            Student Report Card
+            Student Marksheet
           </h2>
 
           <p className="mt-1 text-sm font-medium text-gray-600">
@@ -355,7 +356,7 @@ export default function ReportCardPage() {
             </h3>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 p-4 text-center md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 p-4 text-center md:grid-cols-5">
             <div>
               <p className="text-xs text-gray-500">
                 Student Name
@@ -363,6 +364,16 @@ export default function ReportCardPage() {
 
               <p className="mt-1 text-sm font-semibold text-gray-900">
                 {student.studentName}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs text-gray-500">
+                Admission Number
+              </p>
+
+              <p className="mt-1 text-sm font-semibold text-gray-900">
+                {student.admissionNumber}
               </p>
             </div>
 

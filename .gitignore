@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+/tests/billing/fixtures/billing-test-ids.json
+/tests/billing/billing-test-results.json
 
 # next.js
 /.next/

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -66,6 +67,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    const idempotencyKey =
+      request.headers.get("Idempotency-Key")?.trim();
 
     const {
       billId,
@@ -77,6 +80,19 @@ export async function POST(request: Request) {
       waiverReason,
       paymentDate,
     } = body;
+
+    if (
+      !idempotencyKey ||
+      idempotencyKey.length > 200
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "A valid Idempotency-Key header is required.",
+        },
+        { status: 400 }
+      );
+    }
 
     // --------------------------------------------------
     // Basic validation
@@ -93,6 +109,19 @@ export async function POST(request: Request) {
 
     const paymentAmount = Number(amount);
     const paymentWaiver = Number(waiverAmount);
+    const normalizedReference =
+      typeof reference === "string"
+        ? reference.trim() || null
+        : null;
+    const normalizedNotes =
+      typeof notes === "string"
+        ? notes.trim() || null
+        : null;
+    const normalizedWaiverReason =
+      paymentWaiver > 0 &&
+      typeof waiverReason === "string"
+        ? waiverReason.trim()
+        : null;
 
     if (
       !Number.isFinite(paymentAmount) ||
@@ -129,7 +158,7 @@ export async function POST(request: Request) {
 
     if (
       paymentWaiver > 0 &&
-      !waiverReason?.trim()
+      !normalizedWaiverReason
     ) {
       return NextResponse.json(
         {
@@ -159,12 +188,123 @@ export async function POST(request: Request) {
       }
     }
 
+    const idempotencyRequestHash = createHash("sha256")
+      .update(
+        JSON.stringify({
+          billId,
+          amount: paymentAmount,
+          method,
+          reference: normalizedReference,
+          notes: normalizedNotes,
+          waiverAmount: paymentWaiver,
+          waiverReason: normalizedWaiverReason,
+          paymentDate:
+            parsedPaymentDate?.toISOString() ?? null,
+        })
+      )
+      .digest("hex");
+
     // --------------------------------------------------
     // Transaction
     // --------------------------------------------------
 
     const result = await prisma.$transaction(
       async (tx) => {
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(
+            hashtextextended(
+              ${`payment-idempotency:${idempotencyKey}`},
+              0
+            )
+          )
+        `;
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(
+            hashtextextended(${`billing:bill:${billId}`}, 0)
+          )
+        `;
+
+        const existingPayment =
+          await tx.payment.findUnique({
+            where: {
+              idempotencyKey,
+            },
+          });
+
+        if (existingPayment) {
+          if (
+            existingPayment.idempotencyRequestHash !==
+            idempotencyRequestHash
+          ) {
+            throw new Error(
+              "IDEMPOTENCY_KEY_REUSED"
+            );
+          }
+
+          const existingBill =
+            await tx.bill.findUnique({
+              where: {
+                id: existingPayment.billId,
+              },
+            });
+
+          if (!existingBill) {
+            throw new Error("BILL_NOT_FOUND");
+          }
+
+          const [
+            paymentTotals,
+            creditTotals,
+          ] = await Promise.all([
+            tx.payment.aggregate({
+              where: {
+                billId: existingBill.id,
+              },
+              _sum: {
+                amount: true,
+                waiverAmount: true,
+              },
+            }),
+            tx.billCreditApplication.aggregate({
+              where: {
+                billId: existingBill.id,
+              },
+              _sum: {
+                amount: true,
+              },
+            }),
+          ]);
+
+          const previousPaidAmount = Number(
+            paymentTotals._sum.amount ?? 0
+          );
+          const previousWaiverAmount = Number(
+            paymentTotals._sum.waiverAmount ?? 0
+          );
+          const previousCreditAmount = Number(
+            creditTotals._sum.amount ?? 0
+          );
+          const totalSettled =
+            previousPaidAmount +
+            previousWaiverAmount +
+            previousCreditAmount;
+
+          return {
+            payment: existingPayment,
+            bill: existingBill,
+            previousPaidAmount,
+            previousWaiverAmount,
+            previousCreditAmount,
+            totalSettled,
+            remainingDue: Math.max(
+              0,
+              Number(existingBill.totalAmount) -
+                totalSettled
+            ),
+            replayed: true,
+          };
+        }
+
         // ----------------------------------------------
         // Find bill
         // ----------------------------------------------
@@ -294,15 +434,12 @@ export async function POST(request: Request) {
               billId,
               amount: paymentAmount,
               method,
-              reference:
-                reference?.trim() || null,
-              notes:
-                notes?.trim() || null,
+              reference: normalizedReference,
+              notes: normalizedNotes,
               waiverAmount: paymentWaiver,
-              waiverReason:
-                paymentWaiver > 0
-                  ? waiverReason.trim()
-                  : null,
+              waiverReason: normalizedWaiverReason,
+              idempotencyKey,
+              idempotencyRequestHash,
 
               ...(parsedPaymentDate
                 ? {
@@ -383,6 +520,7 @@ export async function POST(request: Request) {
             0,
             newOutstanding
           ),
+          replayed: false,
         };
       },
       {
@@ -397,8 +535,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        message:
-          "Payment recorded successfully.",
+        message: result.replayed
+          ? "This payment request was already recorded."
+          : "Payment recorded successfully.",
         payment: result.payment,
         bill: result.bill,
         settlement: {
@@ -414,7 +553,7 @@ export async function POST(request: Request) {
             result.remainingDue,
         },
       },
-      { status: 201 }
+      { status: result.replayed ? 200 : 201 }
     );
   } catch (error) {
     console.error(
@@ -432,6 +571,19 @@ export async function POST(request: Request) {
             error: "Bill not found.",
           },
           { status: 404 }
+        );
+      }
+
+      if (
+        error.message ===
+        "IDEMPOTENCY_KEY_REUSED"
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "This Idempotency-Key has already been used for a different payment request.",
+          },
+          { status: 409 }
         );
       }
 

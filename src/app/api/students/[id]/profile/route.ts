@@ -213,6 +213,7 @@ export async function GET(
     let totalPaid = 0;
     let totalWaivers = 0;
     let totalCreditsApplied = 0;
+    let remainingDue = 0;
 
     const formattedBills = bills.map((bill) => {
       const totalAmount = Number(bill.totalAmount);
@@ -232,27 +233,39 @@ export async function GET(
           0
         );
 
+      const isVoidedWithoutSettlement =
+        bill.status === "CANCELLED" &&
+        paidAmount === 0 &&
+        waiverAmount === 0 &&
+        creditApplied === 0;
       const remainingAmount = Math.max(
         0,
-        totalAmount -
-          paidAmount -
-          waiverAmount -
-          creditApplied
+        isVoidedWithoutSettlement
+          ? 0
+          : totalAmount -
+              paidAmount -
+              waiverAmount -
+              creditApplied
       );
 
-      totalBilled += totalAmount;
-      totalDiscounts += discountAmount;
-      totalPaid += paidAmount;
-      totalWaivers += waiverAmount;
-      totalCreditsApplied += creditApplied;
+      if (!isVoidedWithoutSettlement) {
+        totalBilled += totalAmount;
+        totalDiscounts += discountAmount;
+        totalPaid += paidAmount;
+        totalWaivers += waiverAmount;
+        totalCreditsApplied += creditApplied;
+        remainingDue += remainingAmount;
+      }
 
       return {
         id: bill.id,
         billNumber: bill.billNumber,
         billingDate: bill.billingDate,
         dueDate: bill.dueDate,
-        periodStart: bill.periodStart,
-        periodEnd: bill.periodEnd,
+        periodStartYear: bill.periodStartYear,
+        periodStartMonth: bill.periodStartMonth,
+        periodEndYear: bill.periodEndYear,
+        periodEndMonth: bill.periodEndMonth,
 
         totalAmount,
         discountAmount,
@@ -304,14 +317,6 @@ export async function GET(
           new Date(b.paymentDate).getTime() -
           new Date(a.paymentDate).getTime()
       );
-
-    const remainingDue = Math.max(
-      0,
-      totalBilled -
-        totalPaid -
-        totalWaivers -
-        totalCreditsApplied
-    );
 
     // ---------------------------------------------------------
     // ACADEMIC RECORDS

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { formatBSDate } from "@/lib/nepali-date";
 import {
   ArrowLeft,
   Banknote,
@@ -71,11 +72,7 @@ function formatCurrency(value: number) {
 }
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatBSDate(value);
 }
 
 function getMethodIcon(method: PaymentMethod) {

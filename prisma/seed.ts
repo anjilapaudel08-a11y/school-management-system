@@ -31,6 +31,8 @@ async function main() {
   await prisma.feeStructure.deleteMany();
 
   await prisma.mark.deleteMany();
+  await prisma.gradeScaleEntry.deleteMany();
+  await prisma.gradeScale.deleteMany();
   await prisma.examSubject.deleteMany();
   await prisma.exam.deleteMany();
   await prisma.academicTerm.deleteMany();
@@ -558,7 +560,74 @@ async function main() {
   console.log("✓ Aarav 10% tuition discount created");
 
   // ---------------------------------------------------------
-  // 17. INFRASTRUCTURE
+  // 17. APPROVED PERCENTAGE GRADE SCALE
+  // ---------------------------------------------------------
+
+  const standardGradeScale = await prisma.gradeScale.create({
+    data: {
+      name: "Standard Percentage Scale",
+      description: "Approved percentage, grade and GPA scale.",
+      entries: {
+        create: [
+          {
+            minPercentage: 90,
+            maxPercentage: 100,
+            grade: "A+",
+            gradePoint: 4,
+          },
+          {
+            minPercentage: 80,
+            maxPercentage: 89.99,
+            grade: "A",
+            gradePoint: 3.6,
+          },
+          {
+            minPercentage: 70,
+            maxPercentage: 79.99,
+            grade: "B+",
+            gradePoint: 3.2,
+          },
+          {
+            minPercentage: 60,
+            maxPercentage: 69.99,
+            grade: "B",
+            gradePoint: 2.8,
+          },
+          {
+            minPercentage: 50,
+            maxPercentage: 59.99,
+            grade: "C+",
+            gradePoint: 2.4,
+          },
+          {
+            minPercentage: 40,
+            maxPercentage: 49.99,
+            grade: "C",
+            gradePoint: 2,
+          },
+          {
+            minPercentage: 35,
+            maxPercentage: 39.99,
+            grade: "D",
+            gradePoint: 1.6,
+          },
+          {
+            minPercentage: 0,
+            maxPercentage: 34.99,
+            grade: "NG",
+            gradePoint: 0,
+          },
+        ],
+      },
+    },
+  });
+
+  console.log(
+    `✓ Approved grade scale created: ${standardGradeScale.name}`
+  );
+
+  // ---------------------------------------------------------
+  // 18. INFRASTRUCTURE
   // ---------------------------------------------------------
 
   await prisma.infrastructure.create({

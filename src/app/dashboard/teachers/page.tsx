@@ -1,6 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BikramDatePicker } from "@inicrea/bikram-sambat-react";
+import "@inicrea/bikram-sambat-react/styles.css";
+import {
+  BS_MONTHS,
+  adDateToBSInput,
+  bsInputToADDate,
+  formatBSDate,
+} from "@/lib/nepali-date";
 
 type Teacher = {
   id: string;
@@ -15,6 +23,33 @@ type Teacher = {
   position: string | null;
   joiningDate: string | null;
   basicSalary: string | null;
+};
+
+type SalaryPayment = {
+  id: string;
+  amount: string | number;
+  paymentDate: string;
+  method: string;
+  reference: string | null;
+  notes: string | null;
+};
+
+type SalaryRecord = {
+  id: string;
+  month: number;
+  year: number;
+  salaryAmount: string | number;
+  deduction: string | number;
+  netAmount: string | number;
+  status: "PENDING" | "PARTIAL" | "PAID";
+  academicYear: {
+    name: string;
+  };
+  payments: SalaryPayment[];
+};
+
+type TeacherProfile = Teacher & {
+  salaryRecords: SalaryRecord[];
 };
 
 export default function TeachersPage() {
@@ -42,6 +77,12 @@ export default function TeachersPage() {
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [profileId, setProfileId] =
+    useState<string | null>(null);
+  const [profile, setProfile] =
+    useState<TeacherProfile | null>(null);
+  const [loadingProfile, setLoadingProfile] =
+    useState(false);
 
   async function fetchTeachers() {
     const response = await fetch("/api/teachers");
@@ -52,6 +93,43 @@ export default function TeachersPage() {
 
     const data = await response.json();
     setTeachers(data);
+  }
+
+  async function openProfile(teacherId: string) {
+    if (profileId === teacherId) {
+      setProfileId(null);
+      setProfile(null);
+      return;
+    }
+
+    try {
+      setLoadingProfile(true);
+      setError("");
+      setProfileId(teacherId);
+
+      const response = await fetch(
+        `/api/teachers/${teacherId}`
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Failed to load teacher profile."
+        );
+      }
+
+      setProfile(data);
+    } catch (error) {
+      setProfile(null);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to load teacher profile."
+      );
+    } finally {
+      setLoadingProfile(false);
+    }
   }
 
   useEffect(() => {
@@ -91,11 +169,7 @@ export default function TeachersPage() {
   }
 
   function formatDateForInput(date: string | null) {
-    if (!date) {
-      return "";
-    }
-
-    return date.split("T")[0];
+    return adDateToBSInput(date);
   }
 
   function handleEdit(teacher: Teacher) {
@@ -144,13 +218,17 @@ export default function TeachersPage() {
             firstName,
             middleName,
             lastName,
-            dateOfBirth,
+            dateOfBirth: dateOfBirth
+              ? bsInputToADDate(dateOfBirth)
+              : "",
             gender,
             address,
             phone,
             email,
             position,
-            joiningDate,
+            joiningDate: joiningDate
+              ? bsInputToADDate(joiningDate)
+              : "",
             basicSalary,
           }),
         }
@@ -342,11 +420,9 @@ export default function TeachersPage() {
               Date of Birth
             </label>
 
-            <input
-              type="date"
+            <BikramDatePicker
               value={dateOfBirth}
-              onChange={(e) => setDateOfBirth(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
+              onChange={(value) => setDateOfBirth(value)}
             />
           </div>
 
@@ -412,11 +488,9 @@ export default function TeachersPage() {
               Joining Date
             </label>
 
-            <input
-              type="date"
+            <BikramDatePicker
               value={joiningDate}
-              onChange={(e) => setJoiningDate(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
+              onChange={(value) => setJoiningDate(value)}
             />
           </div>
 
@@ -499,59 +573,219 @@ export default function TeachersPage() {
                 .filter(Boolean)
                 .join(" ");
 
+              const salaryRecords =
+                profileId === teacher.id
+                  ? profile?.salaryRecords ?? []
+                  : [];
+
+              const paidTotal = salaryRecords.reduce(
+                (total, record) =>
+                  total +
+                  record.payments.reduce(
+                    (sum, payment) =>
+                      sum + Number(payment.amount),
+                    0
+                  ),
+                0
+              );
+
+              const remainingTotal = salaryRecords.reduce(
+                (total, record) => {
+                  const paid = record.payments.reduce(
+                    (sum, payment) =>
+                      sum + Number(payment.amount),
+                    0
+                  );
+                  return (
+                    total +
+                    Math.max(
+                      0,
+                      Number(record.netAmount) - paid
+                    )
+                  );
+                },
+                0
+              );
+
               return (
                 <div
                   key={teacher.id}
-                  className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between"
+                  className="p-5"
                 >
-                  <div>
-                    <p className="font-medium">{fullName}</p>
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="font-medium">{fullName}</p>
 
-                    <div className="mt-1 space-y-1 text-sm text-gray-500">
-                      {teacher.position && (
-                        <p>{teacher.position}</p>
-                      )}
+                      <div className="mt-1 space-y-1 text-sm text-gray-500">
+                        {teacher.position && (
+                          <p>{teacher.position}</p>
+                        )}
 
-                      {teacher.phone && (
-                        <p>Phone: {teacher.phone}</p>
-                      )}
+                        {teacher.phone && (
+                          <p>Phone: {teacher.phone}</p>
+                        )}
 
-                      {teacher.email && (
-                        <p>Email: {teacher.email}</p>
-                      )}
+                        {teacher.email && (
+                          <p>Email: {teacher.email}</p>
+                        )}
 
-                      {teacher.basicSalary && (
-                        <p>
-                          Basic Salary: Rs.{" "}
-                          {Number(
-                            teacher.basicSalary
-                          ).toLocaleString()}
-                        </p>
-                      )}
+                        {teacher.basicSalary && (
+                          <p>
+                            Basic Salary: Rs.{" "}
+                            {Number(
+                              teacher.basicSalary
+                            ).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void openProfile(teacher.id)}
+                        disabled={loadingProfile && profileId === teacher.id}
+                        className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {profileId === teacher.id
+                          ? "Close Salary History"
+                          : "View Salary History"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleEdit(teacher)}
+                        disabled={deletingId === teacher.id}
+                        className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Edit
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(teacher)}
+                        disabled={deletingId === teacher.id}
+                        className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {deletingId === teacher.id
+                          ? "Deleting..."
+                          : "Delete"}
+                      </button>
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleEdit(teacher)}
-                      disabled={deletingId === teacher.id}
-                      className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      Edit
-                    </button>
+                  {profileId === teacher.id && profile && (
+                    <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div className="rounded-lg border border-gray-200 bg-white p-4">
+                          <p className="text-xs text-gray-500">Monthly Records</p>
+                          <p className="mt-1 text-xl font-bold text-gray-900">
+                            {salaryRecords.length}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-gray-200 bg-white p-4">
+                          <p className="text-xs text-gray-500">Total Paid</p>
+                          <p className="mt-1 text-xl font-bold text-green-700">
+                            Rs. {paidTotal.toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-gray-200 bg-white p-4">
+                          <p className="text-xs text-gray-500">Total Remaining</p>
+                          <p className="mt-1 text-xl font-bold text-red-700">
+                            Rs. {remainingTotal.toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(teacher)}
-                      disabled={deletingId === teacher.id}
-                      className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-                    >
-                      {deletingId === teacher.id
-                        ? "Deleting..."
-                        : "Delete"}
-                    </button>
-                  </div>
+                      {salaryRecords.length === 0 ? (
+                        <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-500">
+                          No salary records found for this teacher.
+                        </div>
+                      ) : (
+                        <div className="mt-4 space-y-3">
+                          {salaryRecords.map((record) => {
+                            const paid = record.payments.reduce(
+                              (sum, payment) =>
+                                sum + Number(payment.amount),
+                              0
+                            );
+                            const remaining = Math.max(
+                              0,
+                              Number(record.netAmount) - paid
+                            );
+
+                            return (
+                              <div
+                                key={record.id}
+                                className="rounded-lg border border-gray-200 bg-white p-4"
+                              >
+                                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                  <div>
+                                    <p className="font-semibold text-gray-900">
+                                      {BS_MONTHS[record.month - 1] ?? record.month}{" "}
+                                      {record.year}
+                                    </p>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                      {record.academicYear.name}
+                                    </p>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-4">
+                                    <p>
+                                      <span className="text-gray-500">Gross:</span>{" "}
+                                      <strong>Rs. {Number(record.salaryAmount).toLocaleString()}</strong>
+                                    </p>
+                                    <p>
+                                      <span className="text-gray-500">Deduction:</span>{" "}
+                                      <strong>Rs. {Number(record.deduction).toLocaleString()}</strong>
+                                    </p>
+                                    <p>
+                                      <span className="text-gray-500">Paid:</span>{" "}
+                                      <strong className="text-green-700">Rs. {paid.toLocaleString()}</strong>
+                                    </p>
+                                    <p>
+                                      <span className="text-gray-500">Remaining:</span>{" "}
+                                      <strong className="text-red-700">Rs. {remaining.toLocaleString()}</strong>
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {record.payments.length > 0 && (
+                                  <div className="mt-3 border-t border-gray-200 pt-3">
+                                    <p className="mb-2 text-xs font-semibold uppercase text-gray-500">
+                                      Payment History
+                                    </p>
+                                    <div className="space-y-2">
+                                      {record.payments.map((payment) => (
+                                        <div
+                                          key={payment.id}
+                                          className="flex flex-col gap-1 rounded-lg bg-gray-50 px-3 py-2 text-sm md:flex-row md:items-center md:justify-between"
+                                        >
+                                          <p className="font-semibold text-green-700">
+                                            Rs. {Number(payment.amount).toLocaleString()}
+                                          </p>
+                                          <p className="text-gray-600">
+                                            {formatBSDate(payment.paymentDate)}
+                                          </p>
+                                          <p className="text-gray-600">
+                                            {payment.method.replace("_", " ")}
+                                          </p>
+                                          {payment.reference && (
+                                            <p className="text-gray-600">
+                                              Ref: {payment.reference}
+                                            </p>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}

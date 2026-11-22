@@ -381,6 +381,21 @@ export async function DELETE(
       message: "Student deleted successfully.",
     });
   } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "P2003"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "This student cannot be deleted because related records exist.",
+        },
+        { status: 409 }
+      );
+    }
+
     console.error("Failed to delete student:", error);
 
     return NextResponse.json(

@@ -1,6 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BikramDatePicker } from "@inicrea/bikram-sambat-react";
+import "@inicrea/bikram-sambat-react/styles.css";
+import {
+  adDateToBSInput,
+  bsInputToADDate,
+  formatBSDate,
+} from "@/lib/nepali-date";
 
 type AcademicYear = {
   id: string;
@@ -403,8 +410,8 @@ export default function ExamsPage() {
           termId,
           classId,
           name: name.trim(),
-          startDate: startDate || null,
-          endDate: endDate || null,
+          startDate: startDate ? bsInputToADDate(startDate) : null,
+          endDate: endDate ? bsInputToADDate(endDate) : null,
           subjects: selectedSubjects.map((item) => ({
             subjectId: item.subjectId,
             theoryFullMarks: Number(
@@ -451,17 +458,9 @@ export default function ExamsPage() {
 
     setEditName(exam.name);
 
-    setEditStartDate(
-      exam.startDate
-        ? exam.startDate.slice(0, 10)
-        : ""
-    );
+    setEditStartDate(adDateToBSInput(exam.startDate));
 
-    setEditEndDate(
-      exam.endDate
-        ? exam.endDate.slice(0, 10)
-        : ""
-    );
+    setEditEndDate(adDateToBSInput(exam.endDate));
 
     setError("");
     setSuccess("");
@@ -497,8 +496,12 @@ export default function ExamsPage() {
           },
           body: JSON.stringify({
             name: editName,
-            startDate: editStartDate || null,
-            endDate: editEndDate || null,
+            startDate: editStartDate
+              ? bsInputToADDate(editStartDate)
+              : null,
+            endDate: editEndDate
+              ? bsInputToADDate(editEndDate)
+              : null,
           }),
         }
       );
@@ -735,12 +738,9 @@ export default function ExamsPage() {
               Start Date
             </label>
 
-            <input
-              type="date"
+            <BikramDatePicker
               value={startDate}
-              onChange={(e) =>
-                setStartDate(e.target.value)
-              }
+              onChange={(value) => setStartDate(value)}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
             />
           </div>
@@ -750,12 +750,9 @@ export default function ExamsPage() {
               End Date
             </label>
 
-            <input
-              type="date"
+            <BikramDatePicker
               value={endDate}
-              onChange={(e) =>
-                setEndDate(e.target.value)
-              }
+              onChange={(value) => setEndDate(value)}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none"
             />
           </div>
@@ -935,11 +932,10 @@ export default function ExamsPage() {
                 Start Date
               </label>
 
-              <input
-                type="date"
+              <BikramDatePicker
                 value={editStartDate}
-                onChange={(e) =>
-                  setEditStartDate(e.target.value)
+                onChange={(value) =>
+                  setEditStartDate(value)
                 }
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 outline-none"
               />
@@ -950,11 +946,10 @@ export default function ExamsPage() {
                 End Date
               </label>
 
-              <input
-                type="date"
+              <BikramDatePicker
                 value={editEndDate}
-                onChange={(e) =>
-                  setEditEndDate(e.target.value)
+                onChange={(value) =>
+                  setEditEndDate(value)
                 }
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 outline-none"
               />
@@ -1011,16 +1006,12 @@ export default function ExamsPage() {
                       exam.endDate) && (
                       <p className="text-sm text-gray-400">
                         {exam.startDate
-                          ? new Date(
-                              exam.startDate
-                            ).toLocaleDateString()
-                          : "No start date"}{" "}
+                         ? formatBSDate(exam.startDate)
+                         : "No start date"}{" "}
                         —{" "}
                         {exam.endDate
-                          ? new Date(
-                              exam.endDate
-                            ).toLocaleDateString()
-                          : "No end date"}
+                         ? formatBSDate(exam.endDate)
+                         : "No end date"}
                       </p>
                     )}
                   </div>

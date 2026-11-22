@@ -85,6 +85,77 @@ export function formatBS(date: Date): string {
 }
 
 /**
+ * Format an API/ISO date for display in the Nepali calendar.
+ * Invalid and missing values are rendered as a safe placeholder.
+ */
+export function formatBSDate(
+  value: string | Date | null | undefined
+): string {
+  if (!value) return "-";
+
+  let date: Date;
+
+  if (value instanceof Date) {
+    date = value;
+  } else {
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    date = dateOnly
+      ? new Date(
+          `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}T12:00:00`
+        )
+      : new Date(value);
+  }
+
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return formatBS(date);
+}
+
+export function adDateToBSInput(
+  value: string | Date | null | undefined
+): string {
+  if (!value) return "";
+
+  let date: Date;
+
+  if (value instanceof Date) {
+    date = value;
+  } else {
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    date = dateOnly
+      ? new Date(
+          `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}T12:00:00`
+        )
+      : new Date(value);
+  }
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  const bs = NepaliDate.fromAD(date);
+
+  return [
+    bs.getYear(),
+    String(bs.getMonth() + 1).padStart(2, "0"),
+    String(bs.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+export function bsInputToADDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    throw new Error("Please select a valid Nepali date.");
+  }
+
+  const date = bsToDate(
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3])
+  );
+
+  return date.toISOString();
+}
+
+/**
  * Convert a BS year/month into a sequential index.
  *
  * This is used for comparing Nepali months and calculating

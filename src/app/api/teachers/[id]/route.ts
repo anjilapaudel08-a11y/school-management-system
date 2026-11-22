@@ -7,6 +7,66 @@ type RouteContext = {
   }>;
 };
 
+export async function GET(
+  _request: Request,
+  context: RouteContext
+) {
+  try {
+    const { id } = await context.params;
+
+    const teacher = await prisma.teacher.findUnique({
+      where: { id },
+      include: {
+        salaryRecords: {
+          include: {
+            academicYear: {
+              select: {
+                id: true,
+                name: true,
+                isActive: true,
+              },
+            },
+            payments: {
+              orderBy: {
+                paymentDate: "desc",
+              },
+            },
+          },
+          orderBy: [
+            { year: "desc" },
+            { month: "desc" },
+          ],
+        },
+        assignments: {
+          include: {
+            class: true,
+            subject: true,
+            academicYear: true,
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+      },
+    });
+
+    if (!teacher) {
+      return NextResponse.json(
+        { error: "Teacher not found." },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(teacher);
+  } catch (error) {
+    console.error("Failed to fetch teacher profile:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch teacher profile." },
+      { status: 500 }
+    );
+  }
+}
+
 export async function PATCH(
   request: Request,
   context: RouteContext

@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { BikramDatePicker } from "@inicrea/bikram-sambat-react";
+import "@inicrea/bikram-sambat-react/styles.css";
+import {
+  BS_MONTHS,
+  adDateToBSInput,
+  bsInputToADDate,
+  formatBSDate,
+} from "@/lib/nepali-date";
 import {
   ArrowLeft,
   Banknote,
@@ -78,8 +86,10 @@ type Bill = {
   paidAmount: string | number;
   status: string;
   notes: string | null;
-  periodStart: string;
-  periodEnd: string;
+  periodStartYear: number;
+  periodStartMonth: number;
+  periodEndYear: number;
+  periodEndMonth: number;
   student: Student;
   academicYear: AcademicYear;
   items: BillItem[];
@@ -107,13 +117,7 @@ function formatCurrency(value: string | number | null | undefined) {
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return "-";
-
-  return new Date(value).toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatBSDate(value);
 }
 
 function getStudentName(student: Student) {
@@ -127,6 +131,10 @@ export default function BillDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const paymentAttempt = useRef<{
+    fingerprint: string;
+    key: string;
+  } | null>(null);
   const [billId, setBillId] = useState("");
 
   const [bill, setBill] = useState<Bill | null>(null);
@@ -135,8 +143,10 @@ export default function BillDetailPage({
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
+  const [cancellingBill, setCancellingBill] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [paymentSuccess, setPaymentSuccess] = useState("");
+  const [billActionError, setBillActionError] = useState("");
 
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState("");
@@ -255,7 +265,7 @@ export default function BillDetailPage({
         : ""
     );
 
-    setPaymentDate(new Date().toISOString().split("T")[0]);
+    setPaymentDate(adDateToBSInput(new Date()));
     setMethod("CASH");
     setReference("");
     setNotes("");
@@ -327,24 +337,38 @@ export default function BillDetailPage({
     try {
       setSavingPayment(true);
 
+      const paymentPayload = {
+        billId: bill.id,
+        amount: paymentAmount,
+        method,
+        reference: reference.trim() || undefined,
+        notes: notes.trim() || undefined,
+        waiverAmount: paymentWaiver,
+        waiverReason:
+          paymentWaiver > 0
+            ? waiverReason.trim()
+            : undefined,
+        paymentDate: paymentDate
+          ? bsInputToADDate(paymentDate)
+          : undefined,
+      };
+      const fingerprint = JSON.stringify(paymentPayload);
+      const idempotencyKey =
+        paymentAttempt.current?.fingerprint === fingerprint
+          ? paymentAttempt.current.key
+          : globalThis.crypto.randomUUID();
+      paymentAttempt.current = {
+        fingerprint,
+        key: idempotencyKey,
+      };
+
       const response = await fetch("/api/payments", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
         },
-        body: JSON.stringify({
-          billId: bill.id,
-          amount: paymentAmount,
-          method,
-          reference: reference.trim() || undefined,
-          notes: notes.trim() || undefined,
-          waiverAmount: paymentWaiver,
-          waiverReason:
-            paymentWaiver > 0
-              ? waiverReason.trim()
-              : undefined,
-          paymentDate: paymentDate || undefined,
-        }),
+        body: JSON.stringify(paymentPayload),
       });
 
       const data = await response.json();
@@ -358,6 +382,7 @@ export default function BillDetailPage({
       setPaymentSuccess(
         "Payment recorded successfully."
       );
+      paymentAttempt.current = null;
 
       setShowPaymentForm(false);
 
@@ -372,6 +397,40 @@ export default function BillDetailPage({
       );
     } finally {
       setSavingPayment(false);
+    }
+  }
+
+  async function handleCancelBill() {
+    if (
+      !bill ||
+      !window.confirm(
+        "Cancel this bill? It will remain in the audit history. Any student charges on an unpaid bill may be included in a replacement bill.",
+      )
+    ) {
+      return;
+    }
+
+    setCancellingBill(true);
+    setBillActionError("");
+    try {
+      const response = await fetch(
+        `/api/bills/${bill.id}/cancel`,
+        { method: "POST" },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to cancel bill.");
+      }
+
+      setPaymentSuccess("Bill cancelled. The bill record remains in the audit history.");
+      await fetchBill(bill.id);
+    } catch (err) {
+      console.error(err);
+      setBillActionError(
+        err instanceof Error ? err.message : "Failed to cancel bill.",
+      );
+    } finally {
+      setCancellingBill(false);
     }
   }
 
@@ -447,18 +506,32 @@ export default function BillDetailPage({
           </p>
         </div>
 
-        {bill.status !== "PAID" &&
-          bill.status !== "CANCELLED" &&
-          paymentTotals.remaining > 0 && (
-            <button
-              type="button"
-              onClick={openPaymentForm}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-red-800"
-            >
-              <Banknote className="h-4 w-4" />
-              Record Payment
-            </button>
-          )}
+        {bill.status !== "CANCELLED" && (
+          <div className="flex flex-wrap gap-3">
+            {bill.status !== "PAID" &&
+              paymentTotals.remaining > 0 && (
+                <button
+                  type="button"
+                  onClick={openPaymentForm}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-red-800"
+                >
+                  <Banknote className="h-4 w-4" />
+                  Record Payment
+                </button>
+              )}
+            {bill.payments.length === 0 &&
+              bill.creditApplications.length === 0 && (
+                <button
+                  type="button"
+                  onClick={handleCancelBill}
+                  disabled={cancellingBill}
+                  className="rounded-lg border border-gray-300 px-5 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {cancellingBill ? "Cancelling..." : "Cancel Bill"}
+                </button>
+              )}
+          </div>
+        )}
       </div>
 
       {/* Success message */}
@@ -466,6 +539,11 @@ export default function BillDetailPage({
         <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 p-4 text-sm font-medium text-green-700">
           <CheckCircle2 className="h-5 w-5 shrink-0" />
           {paymentSuccess}
+        </div>
+      )}
+      {billActionError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
+          {billActionError}
         </div>
       )}
 
@@ -602,13 +680,11 @@ export default function BillDetailPage({
                 <div className="relative">
                   <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
 
-                  <input
-                    type="date"
+                  <BikramDatePicker
                     value={paymentDate}
-                    onChange={(e) =>
-                      setPaymentDate(e.target.value)
+                    onChange={(value) =>
+                      setPaymentDate(value)
                     }
-                    className="w-full rounded-lg border border-gray-300 py-2.5 pl-10 pr-3 text-sm outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-100"
                   />
                 </div>
               </div>
@@ -829,8 +905,10 @@ export default function BillDetailPage({
                 Period
               </p>
               <p className="mt-1 text-gray-700">
-                {formatDate(bill.periodStart)} -{" "}
-                {formatDate(bill.periodEnd)}
+                {bill.periodStartYear === bill.periodEndYear &&
+                bill.periodStartMonth === bill.periodEndMonth
+                  ? `${BS_MONTHS[bill.periodStartMonth - 1]} ${bill.periodStartYear}`
+                  : `${BS_MONTHS[bill.periodStartMonth - 1]} ${bill.periodStartYear} – ${BS_MONTHS[bill.periodEndMonth - 1]} ${bill.periodEndYear}`}
               </p>
             </div>
 

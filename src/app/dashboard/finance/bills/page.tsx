@@ -10,7 +10,7 @@ import {
   Search,
 } from "lucide-react";
 
-import { BS_MONTHS } from "@/lib/nepali-date";
+import { BS_MONTHS, formatBSDate } from "@/lib/nepali-date";
 
 type AcademicYear = {
   id: string;
@@ -104,19 +104,7 @@ function formatMoney(
 function formatDate(
   value: string | null | undefined,
 ): string {
-  if (!value) return "-";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "-";
-  }
-
-  return date.toLocaleDateString("en-NP", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return formatBSDate(value);
 }
 
 /**

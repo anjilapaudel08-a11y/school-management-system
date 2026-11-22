@@ -2,6 +2,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { BikramDatePicker } from "@inicrea/bikram-sambat-react";
+import "@inicrea/bikram-sambat-react/styles.css";
+import { adDateToBSInput, bsInputToADDate } from "@/lib/nepali-date";
 import { Eye, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 
 type AcademicYear = {
@@ -272,9 +275,7 @@ export default function StudentsPage() {
       firstName: student.firstName || "",
       middleName: student.middleName || "",
       lastName: student.lastName || "",
-      dateOfBirth: student.dateOfBirth
-        ? student.dateOfBirth.substring(0, 10)
-        : "",
+      dateOfBirth: adDateToBSInput(student.dateOfBirth),
       gender: student.gender || "",
       address: student.address || "",
       phone: student.phone || "",
@@ -375,7 +376,9 @@ export default function StudentsPage() {
         firstName: form.firstName.trim(),
         middleName: form.middleName.trim() || null,
         lastName: form.lastName.trim() || null,
-        dateOfBirth: form.dateOfBirth || null,
+        dateOfBirth: form.dateOfBirth
+          ? bsInputToADDate(form.dateOfBirth)
+          : null,
         gender: form.gender || null,
         address: form.address.trim() || null,
         phone: form.phone.trim() || null,
@@ -798,17 +801,17 @@ export default function StudentsPage() {
                     }
                   />
 
-                  <Field
-                    label="Date of Birth"
-                    type="date"
-                    value={form.dateOfBirth}
-                    onChange={(value) =>
-                      handleChange(
-                        "dateOfBirth",
-                        value
-                      )
-                    }
-                  />
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">
+                      Date of Birth
+                    </label>
+                    <BikramDatePicker
+                      value={form.dateOfBirth}
+                      onChange={(value) =>
+                        handleChange("dateOfBirth", value)
+                      }
+                    />
+                  </div>
 
                   <div>
                     <label className="mb-1.5 block text-sm font-medium">

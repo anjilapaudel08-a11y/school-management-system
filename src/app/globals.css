@@ -36,3 +36,19 @@ body {
   background: var(--background);
   color: var(--foreground);
 }
+
+.bikram,
+.bikram-picker,
+.bikram-converter {
+  color-scheme: light !important;
+  --bikram-accent: var(--primary) !important;
+  --bikram-accent-contrast: #ffffff !important;
+  --bikram-bg: #ffffff !important;
+  --bikram-fg: var(--foreground) !important;
+  --bikram-muted: var(--muted) !important;
+  --bikram-border: var(--border) !important;
+  --bikram-hover: var(--background) !important;
+  --bikram-weekend: #b91c1c !important;
+  --bikram-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.15),
+    0 4px 10px -6px rgb(0 0 0 / 0.1) !important;
+}

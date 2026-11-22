@@ -12,6 +12,7 @@ import {
   adToBs,
   bsToAdIso,
 } from "@inicrea/bikram-sambat-core";
+import { formatBSDate } from "@/lib/nepali-date";
 
 import "@inicrea/bikram-sambat-react/styles.css";
 
@@ -125,12 +126,7 @@ function formatBsDate(
   value: string | null | undefined
 ): string {
   if (!value) return "No end date";
-
-  try {
-    return `BS ${adToBsInput(value)}`;
-  } catch {
-    return "Date unavailable";
-  }
+  return formatBSDate(value);
 }
 
 export default function DiscountsPage() {

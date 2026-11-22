@@ -10,6 +10,8 @@ function getGrade(
     gradePoint: unknown;
   }[]
 ) {
+  percentage = Number(percentage.toFixed(2));
+
   const entry = entries.find((item) => {
     const min = Number(item.minPercentage);
     const max = Number(item.maxPercentage);
@@ -226,6 +228,7 @@ export async function GET(request: Request) {
 
       return {
         studentId: student.id,
+        admissionNumber: student.admissionNumber,
         studentName: `${student.firstName} ${student.lastName}`.trim(),
 
         rollNumber:
