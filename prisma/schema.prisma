@@ -227,22 +227,25 @@ model AcademicTerm {
 }
 
 model Exam {
-  id          String        @id @default(cuid())
-  termId      String
-  classId     String
-  name        String
-  startDate   DateTime?
-  endDate     DateTime?
-  isPublished Boolean       @default(false)
-  isLocked    Boolean       @default(false)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  class       Class         @relation(fields: [classId], references: [id])
-  term        AcademicTerm  @relation(fields: [termId], references: [id], onDelete: Cascade)
-  subjects    ExamSubject[]
+  id           String        @id @default(cuid())
+  termId       String
+  classId      String
+  gradeScaleId String?
+  name         String
+  startDate    DateTime?
+  endDate      DateTime?
+  isPublished  Boolean       @default(false)
+  isLocked     Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  class        Class         @relation(fields: [classId], references: [id])
+  term         AcademicTerm  @relation(fields: [termId], references: [id], onDelete: Cascade)
+  gradeScale   GradeScale?   @relation(fields: [gradeScaleId], references: [id], onDelete: Restrict)
+  subjects     ExamSubject[]
 
   @@index([termId])
   @@index([classId])
+  @@index([gradeScaleId])
 }
 
 model ExamSubject {
@@ -279,12 +282,15 @@ model Mark {
 }
 
 model GradeScale {
-  id          String            @id @default(cuid())
-  name        String
-  description String?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  entries     GradeScaleEntry[]
+  id                       String            @id @default(cuid())
+  name                     String
+  description              String?
+  isDefault                Boolean           @default(false)
+  usesExclusiveUpperBounds Boolean           @default(false)
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+  entries                  GradeScaleEntry[]
+  exams                    Exam[]
 }
 
 model GradeScaleEntry {

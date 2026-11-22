@@ -14,6 +14,8 @@ type GradeScale = {
   id: string;
   name: string;
   description: string | null;
+  isDefault: boolean;
+  usesExclusiveUpperBounds: boolean;
   entries: GradeEntry[];
 };
 
@@ -571,6 +573,11 @@ export default function GradeScalesPage() {
                   <div>
                     <h3 className="font-semibold">
                       {scale.name}
+                      {scale.isDefault ? (
+                        <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                          Default
+                        </span>
+                      ) : null}
                     </h3>
 
                     {scale.description && (
@@ -628,8 +635,11 @@ export default function GradeScalesPage() {
                           className="border-b border-gray-100"
                         >
                           <td className="px-3 py-2">
-                            {entry.minPercentage} –{" "}
-                            {entry.maxPercentage}%
+                            {entry.minPercentage}% –{" "}
+                            {scale.usesExclusiveUpperBounds &&
+                            Number(entry.maxPercentage) < 100
+                              ? `< ${entry.maxPercentage}%`
+                              : `${entry.maxPercentage}%`}
                           </td>
 
                           <td className="px-3 py-2 font-medium">

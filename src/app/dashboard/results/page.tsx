@@ -20,11 +20,13 @@ type ClassItem = {
 type Exam = {
   id: string;
   name: string;
+  gradeScaleId: string | null;
 };
 
 type GradeScale = {
   id: string;
   name: string;
+  isDefault: boolean;
 };
 
 type SubjectResult = {
@@ -38,6 +40,7 @@ type SubjectResult = {
   fullMarks: number;
   percentage: number;
   grade: string;
+  performanceLevel: string;
   gradePoint: number;
 };
 
@@ -50,6 +53,7 @@ type StudentResult = {
   totalFullMarks: number;
   overallPercentage: number;
   grade: string;
+  performanceLevel: string;
   gpa: number;
   position: number;
 };
@@ -160,10 +164,14 @@ export default function ResultsPage() {
             : classesData.classes || []
         );
 
-        setGradeScales(
+        const loadedGradeScales: GradeScale[] =
           Array.isArray(gradeScalesData)
             ? gradeScalesData
-            : gradeScalesData.gradeScales || []
+            : gradeScalesData.gradeScales || [];
+
+        setGradeScales(loadedGradeScales);
+        setGradeScaleId(
+          loadedGradeScales.find((scale) => scale.isDefault)?.id ?? ""
         );
       } catch (err) {
         console.error(err);
@@ -512,7 +520,15 @@ export default function ResultsPage() {
             <select
               value={examId}
               onChange={(event) => {
+                const selectedExam = exams.find(
+                  (exam) => exam.id === event.target.value,
+                );
                 setExamId(event.target.value);
+                setGradeScaleId(
+                  selectedExam?.gradeScaleId ??
+                    gradeScales.find((scale) => scale.isDefault)?.id ??
+                    "",
+                );
                 setResults(null);
               }}
               disabled={!termId || !classId}
@@ -548,7 +564,10 @@ export default function ResultsPage() {
                 );
                 setResults(null);
               }}
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+              disabled={Boolean(
+                exams.find((exam) => exam.id === examId)?.gradeScaleId
+              )}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none disabled:bg-gray-100 focus:border-red-500 focus:ring-2 focus:ring-red-100"
             >
               <option value="">
                 Select grade scale
@@ -559,7 +578,7 @@ export default function ResultsPage() {
                   key={scale.id}
                   value={scale.id}
                 >
-                  {scale.name}
+                  {scale.name}{scale.isDefault ? " (Default)" : ""}
                 </option>
               ))}
             </select>
@@ -685,6 +704,10 @@ export default function ResultsPage() {
                     </th>
 
                     <th className="px-4 py-3 text-center font-semibold text-gray-700">
+                      Performance
+                    </th>
+
+                    <th className="px-4 py-3 text-center font-semibold text-gray-700">
                       GPA
                     </th>
 
@@ -743,6 +766,10 @@ export default function ResultsPage() {
 
                         <td className="px-4 py-3 text-center font-semibold">
                           {student.grade}
+                        </td>
+
+                        <td className="px-4 py-3 text-center">
+                          {student.performanceLevel}
                         </td>
 
                         {/* GPA */}

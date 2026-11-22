@@ -4,6 +4,7 @@ function exceedsTwoDecimalPlaces(value: number): boolean {
 
 export function validateGradeScaleEntries(
   entries: readonly unknown[],
+  usesExclusiveUpperBounds = true,
 ): string | null {
   if (entries.length === 0) {
     return "At least one grade range is required.";
@@ -40,8 +41,12 @@ export function validateGradeScaleEntries(
       return "Percentage values must be between 0 and 100.";
     }
 
-    if (minPercentage > maxPercentage) {
-      return "Minimum percentage cannot exceed maximum percentage.";
+    if (
+      usesExclusiveUpperBounds
+        ? minPercentage >= maxPercentage
+        : minPercentage > maxPercentage
+    ) {
+      return "Minimum percentage cannot exceed the maximum percentage.";
     }
 
     if (
@@ -78,11 +83,19 @@ export function validateGradeScaleEntries(
     const previous = orderedRanges[index - 1];
     const current = orderedRanges[index];
 
-    if (current.min <= previous.max) {
+    if (
+      usesExclusiveUpperBounds
+        ? current.min < previous.max
+        : current.min <= previous.max
+    ) {
       return "Grade ranges cannot overlap.";
     }
 
-    if (current.min !== previous.max + 1) {
+    if (
+      usesExclusiveUpperBounds
+        ? current.min !== previous.max
+        : current.min !== previous.max + 1
+    ) {
       return "Grade ranges cannot have gaps.";
     }
   }

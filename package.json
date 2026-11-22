@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "provision:accountant": "tsx scripts/provision-accountant.ts",
     "seed:results": "tsx prisma/seed-results.ts"
   },
   "prisma": {

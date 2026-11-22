@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     const entries = Array.isArray(body.entries)
       ? body.entries
       : [];
-    const validationError = validateGradeScaleEntries(entries);
+    const validationError = validateGradeScaleEntries(entries, true);
     if (validationError) {
       return NextResponse.json(
         { error: validationError },
@@ -74,6 +74,7 @@ export async function POST(request: Request) {
       data: {
         name,
         description: description || null,
+        usesExclusiveUpperBounds: true,
         entries: {
           create: entries.map(
             (entry: {

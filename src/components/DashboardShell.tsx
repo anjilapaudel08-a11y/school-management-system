@@ -220,6 +220,10 @@ function isNavigationItemActive(pathname: string, href: string): boolean {
 }
 
 function formatRole(role: string): string {
+  if (role === "ADMIN") {
+    return "Accountant";
+  }
+
   return role
     .replace(/_/g, " ")
     .toLowerCase()

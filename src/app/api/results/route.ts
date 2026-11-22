@@ -1,36 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-function getGrade(
-  percentage: number,
-  entries: {
-    minPercentage: unknown;
-    maxPercentage: unknown;
-    grade: string;
-    gradePoint: unknown;
-  }[]
-) {
-  percentage = Number(percentage.toFixed(2));
-
-  const entry = entries.find((item) => {
-    const min = Number(item.minPercentage);
-    const max = Number(item.maxPercentage);
-
-    return percentage >= min && percentage <= max;
-  });
-
-  if (!entry) {
-    return {
-      grade: "N/A",
-      gradePoint: 0,
-    };
-  }
-
-  return {
-    grade: entry.grade,
-    gradePoint: Number(entry.gradePoint),
-  };
-}
+import { getGradeForPercentage, getPerformanceLevel } from "@/lib/grade-calculation";
 
 export async function GET(request: Request) {
   try {
@@ -43,13 +13,6 @@ export async function GET(request: Request) {
     if (!examId) {
       return NextResponse.json(
         { error: "Exam ID is required." },
-        { status: 400 }
-      );
-    }
-
-    if (!gradeScaleId) {
-      return NextResponse.json(
-        { error: "Grade scale ID is required." },
         { status: 400 }
       );
     }
@@ -93,10 +56,27 @@ export async function GET(request: Request) {
       );
     }
 
+    if (!exam.gradeScaleId) {
+      return NextResponse.json(
+        {
+          error:
+            "This published exam has no recorded grading scale. Assign a scale before viewing its results.",
+        },
+        { status: 409 },
+      );
+    }
+
+    if (gradeScaleId && gradeScaleId !== exam.gradeScaleId) {
+      return NextResponse.json(
+        { error: "Published exam results must use the grading scale saved at publication." },
+        { status: 409 },
+      );
+    }
+
     const gradeScale =
       await prisma.gradeScale.findUnique({
         where: {
-          id: gradeScaleId,
+          id: exam.gradeScaleId,
         },
         include: {
           entries: {
@@ -217,9 +197,10 @@ export async function GET(request: Request) {
               ? (total / fullMarks) * 100
               : 0;
 
-          const gradeResult = getGrade(
+          const gradeResult = getGradeForPercentage(
             percentage,
-            gradeScale.entries
+            gradeScale.entries,
+            gradeScale.usesExclusiveUpperBounds,
           );
 
           totalObtained += total;
@@ -243,6 +224,7 @@ export async function GET(request: Request) {
             percentage,
 
             grade: gradeResult.grade,
+            performanceLevel: getPerformanceLevel(gradeResult.grade),
             gradePoint:
               gradeResult.gradePoint,
           };
@@ -260,9 +242,10 @@ export async function GET(request: Request) {
           ? gradePointTotal / subjects.length
           : 0;
 
-      const overallGrade = getGrade(
+      const overallGrade = getGradeForPercentage(
         overallPercentage,
-        gradeScale.entries
+        gradeScale.entries,
+        gradeScale.usesExclusiveUpperBounds,
       );
 
       return {
@@ -282,6 +265,7 @@ export async function GET(request: Request) {
         overallPercentage,
 
         grade: overallGrade.grade,
+        performanceLevel: getPerformanceLevel(overallGrade.grade),
         gpa,
       };
     });
@@ -342,6 +326,7 @@ const rankedResults: RankedResult[] = [...results]
         termName: exam.term.name,
         academicYear:
           exam.term.academicYear.name,
+        gradeScaleId: exam.gradeScaleId,
       },
 
       gradeScale: {

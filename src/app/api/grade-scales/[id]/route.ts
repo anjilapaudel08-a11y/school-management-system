@@ -77,14 +77,6 @@ export async function PUT(
     }
 
     const entries = body.entries;
-    const validationError = validateGradeScaleEntries(entries);
-    if (validationError) {
-      return NextResponse.json(
-        { error: validationError },
-        { status: 400 },
-      );
-    }
-
     const existingScale =
       await prisma.gradeScale.findUnique({
         where: { id },
@@ -94,6 +86,35 @@ export async function PUT(
       return NextResponse.json(
         { error: "Grade scale not found." },
         { status: 404 }
+      );
+    }
+
+    const validationError = validateGradeScaleEntries(
+      entries,
+      existingScale.usesExclusiveUpperBounds,
+    );
+    if (validationError) {
+      return NextResponse.json(
+        { error: validationError },
+        { status: 400 },
+      );
+    }
+
+    if (existingScale.isDefault) {
+      return NextResponse.json(
+        { error: "The approved default grade scale cannot be edited." },
+        { status: 409 }
+      );
+    }
+
+    const examCount = await prisma.exam.count({
+      where: { gradeScaleId: id },
+    });
+
+    if (examCount > 0) {
+      return NextResponse.json(
+        { error: "This grade scale is saved on published exams and cannot be changed." },
+        { status: 409 }
       );
     }
 
@@ -168,6 +189,24 @@ export async function DELETE(
       return NextResponse.json(
         { error: "Grade scale not found." },
         { status: 404 }
+      );
+    }
+
+    if (existingScale.isDefault) {
+      return NextResponse.json(
+        { error: "The approved default grade scale cannot be deleted." },
+        { status: 409 }
+      );
+    }
+
+    const examCount = await prisma.exam.count({
+      where: { gradeScaleId: id },
+    });
+
+    if (examCount > 0) {
+      return NextResponse.json(
+        { error: "This grade scale is saved on published exams and cannot be deleted." },
+        { status: 409 }
       );
     }
 

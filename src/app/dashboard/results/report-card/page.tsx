@@ -29,6 +29,7 @@ type SubjectResult = {
   fullMarks: number;
   percentage: number;
   grade: string;
+  performanceLevel: string;
   gradePoint: number;
 };
 
@@ -42,6 +43,7 @@ type StudentResult = {
   totalFullMarks: number;
   overallPercentage: number;
   grade: string;
+  performanceLevel: string;
   gpa: number;
   position: number;
 };
@@ -454,6 +456,10 @@ export default function ReportCardPage() {
                 </th>
 
                 <th className="border border-gray-300 px-2 py-2 text-center">
+                  Performance
+                </th>
+
+                <th className="border border-gray-300 px-2 py-2 text-center">
                   GP
                 </th>
               </tr>
@@ -507,6 +513,10 @@ export default function ReportCardPage() {
                     </td>
 
                     <td className="border border-gray-300 px-2 py-2 text-center">
+                      {subject.performanceLevel}
+                    </td>
+
+                    <td className="border border-gray-300 px-2 py-2 text-center">
                       {formatNumber(
                         subject.gradePoint
                       )}
@@ -549,6 +559,10 @@ export default function ReportCardPage() {
                 </td>
 
                 <td className="border border-gray-300 px-2 py-2 text-center">
+                  {student.performanceLevel}
+                </td>
+
+                <td className="border border-gray-300 px-2 py-2 text-center">
                   {formatNumber(student.gpa)}
                 </td>
               </tr>
@@ -579,6 +593,16 @@ export default function ReportCardPage() {
 
             <p className="mt-1 text-lg font-bold text-gray-900">
               {student.grade}
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-gray-300 p-3 text-center">
+            <p className="text-xs text-gray-500">
+              Performance
+            </p>
+
+            <p className="mt-1 text-lg font-bold text-gray-900">
+              {student.performanceLevel}
             </p>
           </div>
 

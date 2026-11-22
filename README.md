@@ -1,38 +1,44 @@
-<<<<<<< HEAD
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# School Management System
 
-## Getting Started
+## Local development
 
-First, run the development server:
+Install dependencies, configure `DATABASE_URL` and `AUTH_SECRET` in an untracked `.env` file, then apply the committed Prisma migrations to the intended development database:
 
-```bash
+```powershell
+npm install
+npx prisma generate
+npx prisma migrate deploy
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Do not run `prisma/seed.ts` against a database containing school data; that seed is destructive. Before applying migrations, verify the database host and name and take the required backup.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Provisioning the Accountant
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The school uses one operational Accountant account. The provisioning command creates a single `ADMIN`-access account with a bcrypt-hashed password; it does not reset or modify existing accounts. Supply values through the current PowerShell session, not source files:
 
-## Learn More
+```powershell
+$env:ACCOUNTANT_PROVISION_EXPECTED_HOST = "<exact database host>"
+$env:ACCOUNTANT_PROVISION_EXPECTED_DATABASE = "<exact database name>"
+$env:ACCOUNTANT_NAME = "<account holder name>"
+$env:ACCOUNTANT_EMAIL = "<account email>"
+$env:ACCOUNTANT_PASSWORD = "<unique password of at least 14 characters>"
+$env:ACCOUNTANT_PROVISION_CONFIRMATION = "CREATE_ACCOUNTANT"
+npm run provision:accountant
+```
 
-To learn more about Next.js, take a look at the following resources:
+The command refuses to connect unless the parsed `DATABASE_URL` host and database exactly match the explicitly approved values. It also refuses to overwrite an account with the same email. Clear the session variables after running the command:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```powershell
+Remove-Item Env:ACCOUNTANT_PROVISION_EXPECTED_HOST, Env:ACCOUNTANT_PROVISION_EXPECTED_DATABASE, Env:ACCOUNTANT_NAME, Env:ACCOUNTANT_EMAIL, Env:ACCOUNTANT_PASSWORD, Env:ACCOUNTANT_PROVISION_CONFIRMATION
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Validation
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
+```powershell
+npm run lint
+npx tsc --noEmit
+npx prisma validate
+npx tsx --test tests\grade-scale-validation.test.ts tests\grade-calculation.test.ts
+npm run build
+```

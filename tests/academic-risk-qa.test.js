@@ -94,24 +94,13 @@ test("exam protection and concurrent salary payments work on QA database", async
       data: {
         examId: exam.id,
         subjectId: subject.id,
-        theoryFullMarks: 100,
+        theoryFullMarks: 200,
         practicalFullMarks: 0,
       },
     });
-    const gradeScale = await appPrisma.gradeScale.create({
-      data: {
-        name: marker,
-        entries: {
-          create: {
-            minPercentage: 0,
-            maxPercentage: 100,
-            grade: "A",
-            gradePoint: 4,
-          },
-        },
-      },
+    const gradeScale = await appPrisma.gradeScale.findFirstOrThrow({
+      where: { isDefault: true },
     });
-    fixture.gradeScaleId = gradeScale.id;
     const teacher = await appPrisma.teacher.create({
       data: { schoolId: school.id, firstName: marker },
     });
@@ -145,7 +134,7 @@ test("exam protection and concurrent salary payments work on QA database", async
         body: JSON.stringify({
           examSubjectId: examSubject.id,
           studentId: students[0].id,
-          theoryMarks: 85,
+          theoryMarks: 0,
           practicalMarks: 0,
         }),
       }),
@@ -167,7 +156,7 @@ test("exam protection and concurrent salary payments work on QA database", async
         body: JSON.stringify({
           examSubjectId: examSubject.id,
           studentId: students[1].id,
-          theoryMarks: 75,
+          theoryMarks: 179.99,
           practicalMarks: 0,
         }),
       }),
@@ -186,6 +175,7 @@ test("exam protection and concurrent salary payments work on QA database", async
     });
     assert.equal(published.isPublished, true);
     assert.equal(published.isLocked, true);
+    assert.equal(published.gradeScaleId, gradeScale.id);
 
     const resultsResponse = await resultsApi.GET(
       new Request(
@@ -195,6 +185,16 @@ test("exam protection and concurrent salary payments work on QA database", async
     assert.equal(resultsResponse.status, 200);
     const results = await resultsResponse.json();
     assert.equal(results.results.length, 2);
+    const zeroMarkResult = results.results.find(
+      (result) => result.studentId === students[0].id,
+    );
+    const nearThresholdResult = results.results.find(
+      (result) => result.studentId === students[1].id,
+    );
+    assert.equal(zeroMarkResult.subjects[0].grade, "NG");
+    assert.equal(zeroMarkResult.subjects[0].performanceLevel, "Not Graded");
+    assert.equal(nearThresholdResult.subjects[0].percentage, 89.995);
+    assert.equal(nearThresholdResult.subjects[0].grade, "A");
 
     const blockedMarkResponse = await marksApi.POST(
       new Request("http://qa.local/api/marks", {
@@ -268,11 +268,6 @@ test("exam protection and concurrent salary payments work on QA database", async
       if (fixture.teacherId) {
         await appPrisma.teacher.deleteMany({
           where: { id: fixture.teacherId },
-        });
-      }
-      if (fixture.gradeScaleId) {
-        await appPrisma.gradeScale.deleteMany({
-          where: { id: fixture.gradeScaleId },
         });
       }
       if (fixture.examId) {

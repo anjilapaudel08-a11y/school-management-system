@@ -57,6 +57,18 @@ export async function POST(
         );
       }
 
+      const defaultGradeScale = await tx.gradeScale.findFirst({
+        where: { isDefault: true },
+        select: { id: true },
+      });
+
+      if (!defaultGradeScale) {
+        throw new PublicationError(
+          "A default grade scale must be configured before publishing results.",
+          409,
+        );
+      }
+
       const enrollments = await tx.enrollment.findMany({
         where: {
           classId: currentExam.classId,
@@ -98,6 +110,7 @@ export async function POST(
         data: {
           isPublished: true,
           isLocked: true,
+          gradeScaleId: defaultGradeScale.id,
         },
         include: {
           term: { include: { academicYear: true } },
@@ -105,6 +118,9 @@ export async function POST(
           subjects: { include: { subject: true } },
         },
       });
+    }, {
+      maxWait: 15_000,
+      timeout: 20_000,
     });
 
     return NextResponse.json({
