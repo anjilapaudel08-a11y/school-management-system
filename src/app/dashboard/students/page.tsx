@@ -21,20 +21,13 @@ type ClassItem = {
   name: string;
 };
 
-type Section = {
-  id: string;
-  name: string;
-};
-
 type Enrollment = {
   id: string;
   academicYearId: string;
   classId: string;
-  sectionId: string | null;
   rollNumber: number | null;
   academicYear: AcademicYear;
   class: ClassItem;
-  section: Section | null;
 };
 
 type Student = {
@@ -72,7 +65,6 @@ type StudentForm = {
   guardianPhone: string;
   academicYearId: string;
   classId: string;
-  sectionId: string;
   rollNumber: string;
 };
 
@@ -92,7 +84,6 @@ const emptyForm: StudentForm = {
   guardianPhone: "",
   academicYearId: "",
   classId: "",
-  sectionId: "",
   rollNumber: "",
 };
 
@@ -101,7 +92,6 @@ export default function StudentsPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [sections, setSections] = useState<Section[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -175,31 +165,12 @@ export default function StudentsPage() {
     }
   };
 
-  const loadSections = async () => {
-    try {
-      const response = await fetch("/api/sections", {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        setSections([]);
-        return;
-      }
-
-      const data = await response.json();
-      setSections(data);
-    } catch {
-      setSections([]);
-    }
-  };
-
   useEffect(() => {
     // These loaders update state only after their requests complete.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadStudents();
     loadAcademicYears();
     loadClasses();
-    loadSections();
   }, []);
 
   const filteredStudents = useMemo(() => {
@@ -226,7 +197,6 @@ export default function StudentsPage() {
         student.phone,
         student.email,
         latestEnrollment?.class?.name,
-        latestEnrollment?.section?.name,
       ]
         .filter(Boolean)
         .join(" ")
@@ -288,7 +258,6 @@ export default function StudentsPage() {
       guardianPhone: student.guardianPhone || "",
       academicYearId: enrollment?.academicYearId || "",
       classId: enrollment?.classId || "",
-      sectionId: enrollment?.sectionId || "",
       rollNumber:
         enrollment?.rollNumber !== null &&
         enrollment?.rollNumber !== undefined
@@ -307,7 +276,6 @@ export default function StudentsPage() {
           ...current,
           academicYearId,
           classId: "",
-          sectionId: "",
           rollNumber: "",
         };
       }
@@ -321,7 +289,6 @@ export default function StudentsPage() {
           ...current,
           academicYearId,
           classId: existingEnrollment.classId,
-          sectionId: existingEnrollment.sectionId || "",
           rollNumber:
             existingEnrollment.rollNumber !== null &&
             existingEnrollment.rollNumber !== undefined
@@ -334,7 +301,6 @@ export default function StudentsPage() {
         ...current,
         academicYearId,
         classId: "",
-        sectionId: "",
         rollNumber: "",
       };
     });
@@ -391,7 +357,6 @@ export default function StudentsPage() {
         guardianPhone: form.guardianPhone.trim() || null,
         academicYearId: form.academicYearId,
         classId: form.classId,
-        sectionId: form.sectionId || null,
         rollNumber: form.rollNumber
           ? Number(form.rollNumber)
           : null,
@@ -585,10 +550,6 @@ export default function StudentsPage() {
                 </th>
 
                 <th className="px-5 py-4 font-semibold">
-                  Section
-                </th>
-
-                <th className="px-5 py-4 font-semibold">
                   Roll
                 </th>
 
@@ -606,7 +567,7 @@ export default function StudentsPage() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={6}
                     className="px-5 py-10 text-center text-(--muted)"
                   >
                     Loading students...
@@ -615,7 +576,7 @@ export default function StudentsPage() {
               ) : filteredStudents.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={6}
                     className="px-5 py-10 text-center text-(--muted)"
                   >
                     {search
@@ -651,10 +612,6 @@ export default function StudentsPage() {
 
                       <td className="px-5 py-4">
                         {enrollment?.class?.name || "—"}
-                      </td>
-
-                      <td className="px-5 py-4">
-                        {enrollment?.section?.name || "—"}
                       </td>
 
                       <td className="px-5 py-4">
@@ -951,9 +908,6 @@ export default function StudentsPage() {
                               {enrollment.academicYear.name}
                               {" — "}
                               {enrollment.class.name}
-                              {enrollment.section
-                                ? ` — ${enrollment.section.name}`
-                                : ""}
                             </span>
                           )
                         )}
@@ -961,7 +915,7 @@ export default function StudentsPage() {
                     </div>
                   )}
 
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div>
                     <label className="mb-1.5 block text-sm font-medium">
                       Academic Year
@@ -1027,36 +981,6 @@ export default function StudentsPage() {
                           value={item.id}
                         >
                           {item.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium">
-                      Section
-                    </label>
-
-                    <select
-                      value={form.sectionId}
-                      onChange={(event) =>
-                        handleChange(
-                          "sectionId",
-                          event.target.value
-                        )
-                      }
-                      className="w-full rounded-lg border border-(--border) bg-white px-3 py-2.5 text-sm outline-none focus:border-(--primary-dark)"
-                    >
-                      <option value="">
-                        No section
-                      </option>
-
-                      {sections.map((section) => (
-                        <option
-                          key={section.id}
-                          value={section.id}
-                        >
-                          {section.name}
                         </option>
                       ))}
                     </select>

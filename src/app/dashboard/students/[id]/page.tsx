@@ -18,11 +18,6 @@ type AcademicYear = {
     name: string;
   };
 
-  section: {
-    id: string;
-    name: string;
-  } | null;
-
   rollNumber: number | null;
 };
 
@@ -50,11 +45,6 @@ type Enrollment = {
     id: string;
     name: string;
   };
-
-  section: {
-    id: string;
-    name: string;
-  } | null;
 
   rollNumber: number | null;
 };
@@ -439,11 +429,6 @@ export default function StudentProfilePage() {
               "Class",
               data.enrollment?.class.name ||
                 "Not enrolled",
-            ],
-            [
-              "Section",
-              data.enrollment?.section
-                ?.name || "—",
             ],
             [
               "Roll Number",

@@ -32,7 +32,6 @@ export async function GET(
           include: {
             academicYear: true,
             class: true,
-            section: true,
           },
           orderBy: {
             academicYear: {
@@ -488,13 +487,6 @@ export async function GET(
             name: item.class.name,
           },
 
-          section: item.section
-            ? {
-                id: item.section.id,
-                name: item.section.name,
-              }
-            : null,
-
           rollNumber: item.rollNumber,
         })
       ),
@@ -514,13 +506,6 @@ export async function GET(
               id: enrollment.class.id,
               name: enrollment.class.name,
             },
-
-            section: enrollment.section
-              ? {
-                  id: enrollment.section.id,
-                  name: enrollment.section.name,
-                }
-              : null,
 
             rollNumber: enrollment.rollNumber,
           }
