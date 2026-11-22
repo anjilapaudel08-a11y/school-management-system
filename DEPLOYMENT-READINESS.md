@@ -1,51 +1,50 @@
 # Deployment Readiness Report
 
 **Assessment date:** 2026-11-22  
-**Decision:** **Not ready for school deployment yet.** The prior audit recorded an isolated-QA migration/build pass. This refresh independently confirms local lint, type, grading-test, schema-validation, and build passes, but does not confirm the current remote database target or complete the requested browser and historical-data checks.
+**Decision:** **Not ready for school deployment yet.** The user-confirmed isolated QA database was used for focused end-to-end checks; production configuration, recovery rehearsal, and remaining billing coverage are still unverified.
 
 ## Focused verification refresh (2026-11-22)
 
-This refresh did not connect to the configured database. The local `.env` points to a remote Neon host, but its QA/production status could not be independently confirmed. No provisioning, migrations, database queries, or data-changing UI operations were run. The browser could not connect to the local development server, so UI checks below remain pending rather than inferred from source or unit tests.
+The user confirmed the configured Neon database is test-only and authorized targeted QA writes and cleanup. All temporary accounts, exams, and marks created for this refresh were removed. The database returned to 49 exams / 48 published exams; no schema change or migration was made. No production credentials were exposed and no production system was accessed.
 
 | Focus | Latest finding |
 |---|---|
-| Section removal | **Source audit pass.** No `/api/sections` requests, section IDs, or section-specific API references remain in the active student frontend/API flows; there is no sections API route. Registration/enrollment and profile data paths use class only. The legacy `Section` model, database column, migration/seed references, and generated Prisma `sectionId` type remain intentionally preserved. |
-| Accountant setup and access | **Code review only.** Provisioning requirements and password handling are documented below. `ADMIN` is displayed as “Accountant”; the dashboard exposes the full Students, Finance, Academics, Exams, Marks, Results, and Settings navigation. Protected APIs require a signed-in session and have no role-specific feature restriction in the proxy. The provisioned account was not created and login/API access were not tested. |
-| Grading logic | **Unit tests pass.** All eight grades, every approved percentage threshold, 0% and 100%, raw-percentage behavior, legacy inclusive ranges, and all eight performance labels are covered. This is not a browser UI test. |
-| Marks, publication, GPA, position, and report cards | **Partially tested.** Existing prior-audit browser evidence is retained below; this refresh could not reopen or generate report cards, submit marks, publish results, or inspect printable marksheets in a browser. |
-| Historical published exams | **Pending database inventory.** The exact exam IDs/names without a scale were not determined because the current remote target could not be confirmed as isolated QA. Do not assign the new default scale to historical exams automatically. |
-| Billing and migrations | No billing logic or database migration was changed in this refresh. |
-| Local validation | **Pass:** ESLint, TypeScript, focused grading tests (9/9), Prisma validation, and production build. |
+| Section removal | **Pass.** No `/api/sections` request or route remains under `src/app`; student registration, enrollment, and profile frontend/API paths contain no `sectionId` references. Legacy schema, migrations, seed references, and generated Prisma fields remain preserved. |
+| Accountant setup and access | **Pass in QA.** The provisioning script created disposable `ADMIN` accounts that authenticated as “Accountant.” 25 student, academic, examination, results, and financial dashboard routes returned HTTP 200; the class-subjects route also loaded its assigned data. Anonymous `/api/students` remained 401. Temporary accounts were removed. Session expiry, logout, and recovery were not tested. |
+| Grading logic and UI | **Pass in QA.** Marks were entered in the browser for 16 percentages spanning 0, 34.99, 35, 39.99, 40, 49.99, 50, 59.99, 60, 69.99, 70, 79.99, 80, 89.99, 90, and 100. All eight grades rendered correctly. Blank marks were rejected without rows; explicit zero was saved. |
+| Publication, results, GPA, position, report cards, and printing | **Pass for the temporary exam.** UI publication locked marks; 8 result rows and 16 subject rows rendered; grade points, average GPA, and all 8 class positions matched expectations. A new report card and an existing report card opened. Print media hid the print controls and retained the marksheet. |
+| Historical published exams | **No unassigned scales found.** All 48 pre-existing published exams had a scale assignment. However, the legacy `Grade Scale 1` contains only A+, A, B+, and B; some older marksheets therefore render `N/A`. Four Grade 5 term exams in year 2083 each have 15 missing student-subject mark entries for the currently enrolled cohort. Preserve all published marks and assignments pending evidence and school approval. |
+| Billing and migrations | **No billing logic or migration changes.** Broad billing QA: 47 passed, 0 failed, 10 blocked, 13 not executed. All 15 existing migrations remained applied; no migration was run. |
+| Local validation | Final lint, TypeScript, tests, Prisma validation, and production build are listed below after rerun. |
 
 ### Safe Accountant provisioning procedure
 
-The script requires these environment variables: `DATABASE_URL`, `ACCOUNTANT_PROVISION_EXPECTED_HOST`, `ACCOUNTANT_PROVISION_EXPECTED_DATABASE`, `ACCOUNTANT_PROVISION_CONFIRMATION`, `ACCOUNTANT_NAME`, `ACCOUNTANT_EMAIL`, and `ACCOUNTANT_PASSWORD`. The confirmation must be exactly `CREATE_ACCOUNTANT`. The script parses the PostgreSQL URL and refuses to proceed unless its hostname and database name exactly match the two expected-target variables. This is a guardrail, not a way to make production safe: set the expected values only from an independently approved isolated QA configuration.
+The script requires `DATABASE_URL`, `ACCOUNTANT_PROVISION_EXPECTED_HOST`, `ACCOUNTANT_PROVISION_EXPECTED_DATABASE`, `ACCOUNTANT_PROVISION_CONFIRMATION`, `ACCOUNTANT_NAME`, `ACCOUNTANT_EMAIL`, and `ACCOUNTANT_PASSWORD`. The confirmation must be exactly `CREATE_ACCOUNTANT`. The script parses the PostgreSQL URL and refuses to proceed unless its hostname and database name exactly match the expected-target variables. This is a guardrail, not a way to make production safe: use only an independently approved isolated QA configuration.
 
-From the project directory, set those values in a temporary process environment using the approved QA secret source (do not put the URL or password in command arguments, source files, committed `.env` files, screenshots, or shell history), then run:
+From the project directory, first populate `DATABASE_URL` in the current PowerShell process from the approved QA-only secret store; do not paste it into a command, source file, committed `.env` file, screenshot, or shell history. Then set the exact approved QA host/database, confirmation, and intended account identity in that process environment. Read the one-time password from a secure prompt or approved secret store into `ACCOUNTANT_PASSWORD` without echoing it, and run:
 
 ```powershell
 npm run provision:accountant
 ```
 
-Set `ACCOUNTANT_PASSWORD` to a unique password of at least 14 characters. It is passed to the script only through the process environment, hashed with bcrypt cost 12, and the hash is stored as the user password; the plaintext is not stored or printed. The script prints the account email on success. If that email already exists, it makes no account or password changes and exits with an error. Clear all temporary environment variables immediately afterward. Confirm the selected host/database is the isolated QA target before supplying `DATABASE_URL`; never run this procedure against production.
+Use a unique password of at least 14 characters. It is passed only through the process environment, hashed with bcrypt cost 12, and only the hash is stored; the plaintext is not printed or persisted. The script prints the account email on success. If the email already exists, it makes no account or password changes and exits with an error. Clear all temporary environment variables immediately afterward. Verify the selected host/database independently before supplying `DATABASE_URL`; never run this procedure against production.
 
-## Prior audit verification evidence (not repeated in this refresh)
+## Validation and supporting evidence
 
 | Area | Result |
 |---|---|
-| ESLint | Pass: 0 errors, 0 warnings |
+| ESLint | Pass: `npm run lint`; no errors or warnings |
 | TypeScript | Pass: `npx tsc --noEmit` |
-| Production build | Pass: `npm run build` |
+| Grade calculation tests | Pass: 4/4 focused cases, including all 16 percentage points, raw percentage behavior, legacy inclusive ranges, and performance labels |
+| Academic-risk integration test | Pass against the confirmed isolated QA database; missing, blank, and zero marks were checked; the test's temporary records were cleaned up |
 | Prisma schema | Pass: `npx prisma validate`; generated client successfully |
-| Prisma migrations | Pass: all 15 migrations, including `20261122200000_pin_exam_grading_scale`, are applied to the isolated QA database; `npx prisma migrate status` reports up to date. |
-| Grade calculation and validation tests | Pass: 9/9, including all approved thresholds, raw percentage behavior, legacy inclusive scale behavior, and performance labels |
-| Academic-risk QA test | Pass: 1/1 against the isolated QA database. Exam publication pinned the default scale; a recorded zero produced NG; 179.99/200 produced 89.995% and grade A; missing marks blocked publication. |
-| Lint / TypeScript / production build | Pass: `npm run lint`, `npx tsc --noEmit`, and `npm run build` |
-| Billing QA report | Prior run: 47 passed, 0 failed, 10 blocked, 13 not executed. The broad billing suite was not rerun during this audit. See [the billing QA report](./tests/billing/BILLING-QA-REPORT.md). |
-| Browser route smoke test | 27 dashboard routes returned HTTP 200; representative pages were allowed to finish loading and their visible data was inspected. |
-| Temporary QA data | The UI-created `Deploy QA Student` and its enrollment were removed after verification; the student list returned to 63 records. It had no bills, charges, or discounts. |
+| Prisma migrations | Pass: all 15 migrations remain applied; `npx prisma migrate status` reports up to date. No migration was run for this refresh. |
+| Production build | Pass: `npm run build` |
+| Billing QA report | Latest run: 47 passed, 0 failed, 10 blocked, 13 not executed. See [the billing QA report](./tests/billing/BILLING-QA-REPORT.md). |
+| Accountant route smoke test | 25 dashboard routes returned HTTP 200. One initial compile timeout was resolved by retrying; class-subjects loaded its data. |
+| QA cleanup | Temporary Accountant accounts, two exams, and 16 marks were removed. The database returned to 49 exams / 48 published exams. |
 
-No Prisma schema changes or migrations were made during this audit. The destructive production seed was not run.
+No Prisma schema changes or migrations were made, and the destructive production seed was not run.
 
 ## End-to-end workflow checklist
 
@@ -53,7 +52,7 @@ Status meanings: **Tested** means exercised through the UI or a focused test; **
 
 | Role / workflow | Status | Evidence and remaining coverage |
 |---|---|---|
-| Admin sign-in and protected API access | Partial | QA Admin login succeeded; anonymous `/api/students` returned 401. Logout, expired sessions, password reset, and account recovery were not tested. |
+| Accountant sign-in and protected API access | Tested | Provisioned a temporary `ADMIN`/Accountant against isolated QA, logged in, and opened the required student, academic, examination, result, and financial dashboard routes. Anonymous `/api/students` returned 401. Logout, expired sessions, password reset, and recovery were not tested. |
 | Student registration and enrollment | Partial | Created a temporary student and Grade 5 enrollment through the UI, then removed the QA record. The school confirmed it does not use sections; section selection was removed from the student UI/profile path while legacy database columns and data are preserved. |
 | Student profile and account statement | Partial | Existing student profile showed enrollment, bills, payments, discounts, and a separate `Remaining Due` amount. Profile edit, transfer, and other account-history cases were not exercised. |
 | Teacher, class, subject, academic year/term, class-subject, and teacher-assignment management | Partial | Pages and existing records rendered. Create, edit, delete, activation, and relationship validation were not submitted through the UI. |
@@ -64,10 +63,9 @@ Status meanings: **Tested** means exercised through the UI or a focused test; **
 | Student payments and outstanding balances | Partial | Payment history and the original bill's remaining amount rendered in the UI. Posting or reversing a payment through the UI was not tested. Payment idempotency, partial/full settlements, waivers, and concurrency have prior API-level QA evidence. |
 | Salary records and salary payments | Partial | Salary list showed gross Rs. 18,000, paid Rs. 12,000, and remaining Rs. 6,000. The concurrent salary-payment regression test passed. A salary/payment submission through the UI was not tested. |
 | Expenses and bulk adjustments | Partial | Both forms and student choices rendered. No expense or bulk adjustment was submitted. |
-| Exams and marks | Partial | Exam pages rendered; the Marks page loaded saved Grade 8 / Term 4 marks after selecting the UI filters. Mark entry/save, exam creation, publish, and rejection behavior were not submitted through the UI. |
-| Results, GPA, and marksheet | Partial | The earlier UI run calculated Term 4 / Grade 8 results and opened a report card. Raw threshold behavior, variable full marks, zero-versus-missing marks, and exam-to-scale pinning passed unit/API QA tests. The updated performance-label display and report card were not re-tested in a browser. |
+| Exams and marks | Tested | Created a temporary two-subject Grade 5 / Term 4 exam through the UI, entered marks for 8 students at 16 boundary percentages, and saved explicit zeros. The UI rejected blank input; API verification found no row from the rejected save. Published and locked the exam through the UI. |
+| Results, GPA, position, and marksheets | Tested for temporary exam | Verified 8 result rows, 16 subject grades, all eight grades, matching arithmetic-mean GPA, and 8 unique positions matching percentage ranking. Generated a new report card and checked print media. An existing Grade 8 / Term 4 report card opened; grades below its legacy scale's lowest defined band showed `N/A`. |
 | School settings | Partial | Settings form rendered; save and validation were not tested. |
-| Accountant sign-in and access | Partial | A one-time provisioning script creates the Accountant as `ADMIN`, the existing full-access account type, with a bcrypt-hashed password. The script was not run and login/access was not re-tested. `ADMIN` is shown as “Accountant” in the dashboard. |
 | Board Member authorization | Not applicable to the confirmed operating model / untested | The school confirmed one operational Accountant and no need for separate teacher/board logins. Existing `BOARD_MEMBER` enum values remain for compatibility; no role-permission redesign was made. |
 
 ### Results and grade-scale configuration
@@ -76,11 +74,14 @@ The approved default scale has thresholds A+ 90-100, A 80-<90, B+ 70-<80, B 60-<
 
 The current result method remains unchanged: each subject uses its own theory/practical full marks; GPA is the arithmetic mean of subject grade points (including NG as zero); overall percentage and overall grade use total obtained marks divided by total full marks. Publication requires an actual mark row for every student/subject; a saved zero is therefore a real NG result, not a missing mark.
 
-### Historical published exams requiring assignment
+### Historical published exams and scale issues
 
-The migration links a published exam to a prior grading scale only when exactly one scale existed at migration time. When there were zero or multiple legacy scales, it leaves `gradeScaleId` null. Because the current database target was not confirmed as isolated QA, this refresh did not run the inventory query and cannot responsibly name the affected exams.
+The inventory found **zero of 48 previously published exams with a null grading-scale assignment**. No assignment repair is needed. Do not assign the new default scale to published exams or recalculate their grades.
 
-On an independently confirmed QA copy, first list published exams with a null `gradeScaleId`, including each exam's class, term, academic year, and marks. Review each against the original grading-scale records and any preserved report/export evidence. Do not assign the new default scale or recalculate historical marks as a blanket repair. Where evidence identifies the original scale, explicitly map that exam to that exact existing scale and record the reason/approval; where it does not, leave the exam unassigned and results blocked until the school authorizes a documented mapping. Any repair should update only the exam's scale assignment, preserve marks, and be applied as a reviewed, auditable transaction after backup.
+Two separate historical-data limitations were observed:
+
+- The affected exams are **Grade 5 / 2083 / Term 1 Examination**, **Term 2 Examination**, **Term 3 Examination**, and **Term 4 Examination**. Each has 15 missing student-subject mark entries when compared with the current enrolled cohort. Compare the original roster/enrollment at publication time and preserved mark sheets. If a mark is genuinely missing, restore it only from authoritative source records with school approval; do not insert zero or change existing published grades to make results calculate. Preserve each exam's locked state until reconciled.
+- The legacy `Grade Scale 1` defines only A+, A, B+, and B. An existing Grade 8 / Term 4 report card therefore displays `N/A` for grades below 60%. Retrieve the original scale and published artifacts, then obtain a documented school decision before any repair. Do not extend or replace the pinned scale or recalculate the historical results arbitrarily.
 
 ## Billing evidence and limitations
 
@@ -92,7 +93,7 @@ Prior QA examples:
 - With a Rs. 100 partial payment, the first bill's remaining amount stayed on that bill; the next bill was Rs. 17,300 and the statement total was Rs. 43,900.
 - The frequency test verified monthly quantity 3 = Rs. 4,500, term quantity 2 = Rs. 800, annual quantity 3 = Rs. 600, and a one-time amount of Rs. 700.
 
-The prior billing suite had no failures among executed scenarios, but it is not complete:
+The latest billing suite had no failures among executed scenarios, but it is not complete:
 
 - **Blocked (10):** previous-dues/credit application scenarios and injected transaction rollback cases.
 - **Not executed (13):** multi-year billing, seven discount-date/overlap cases, concurrent payment-plus-waiver, and decimal/small/large/zero-value amounts.
@@ -100,15 +101,15 @@ The prior billing suite had no failures among executed scenarios, but it is not 
 
 ## Deployment blockers and handoff tasks
 
-1. **Inventory historical grading assignments.** On a confirmed isolated QA database, identify every published exam with null `gradeScaleId`; the current refresh did not query the remote target, so affected exam names/IDs are pending. Apply the documented evidence-based mapping above; do not arbitrarily assign the current default or recalculate published marks.
-2. **Provision and verify the Accountant account** using `npm run provision:accountant` with exact host/database confirmation and strong credentials supplied through environment variables; test sign-in, session expiry/logout, and all required dashboard/API access.
-3. **Complete authenticated browser tests in staging.** Re-run marks entry/save, publication, result calculation, GPA, class position, existing and newly generated report cards, and printable marksheets. Also verify the Accountant session and all student, academic, examination, results, and financial pages/APIs. The current refresh could not reach the local browser server or use a verified QA account.
+1. **Reconcile historical Grade 5 exams.** The four 2083 Term 1–4 examinations each have 15 missing student-subject entries for the current enrolled cohort. Compare with the original roster and authoritative marksheets; restore only source-verified missing marks after school approval. Preserve existing published marks and the locked state.
+2. **Resolve legacy grading interpretation.** Recover the complete historical Grade Scale 1 definition or preserved published artifacts, then obtain a documented school decision about the existing `N/A` values. Do not silently alter the pinned scale or grades.
+3. **Complete remaining authentication tests.** QA Accountant sign-in and feature access passed, but logout, session expiry, password reset/recovery, and detailed role/API authorization cases remain untested.
 4. **Complete production configuration review.** Production values, secret rotation, hosting configuration, and production database target were not available for verification. Keep secrets out of source control and use a separate production database.
-5. **Close billing coverage gaps.** Prior billing QA had 10 blocked and 13 unexecuted cases. Resolve previous-dues/credit scope and run transaction rollback, multi-year, discount-boundary, concurrent payment-plus-waiver, and amount precision cases before certifying billing fully.
+5. **Close billing coverage gaps.** The billing run had 10 blocked and 13 unexecuted cases. Resolve previous-dues/credit scope and run transaction rollback, multi-year, discount-boundary, concurrent payment-plus-waiver, and amount precision cases before certifying billing fully.
 6. **Run a deployment handoff rehearsal.** Validate backups/restore, migration procedure, monitoring/log access, and rollback on a production-like staging deployment. No production deployment or restore drill was performed in this audit.
 
 ## Evidence notes
 
-- Database migration and integration tests used the previously confirmed isolated QA target; the test harness guard values were created only for the test process and removed afterward.
+- Database inventory, browser workflows, and integration tests used the user-confirmed isolated QA target. Temporary test accounts/exams/marks were removed; no production system was accessed.
 - Direct `node --test` could not resolve the generated Prisma client's extensionless import, including after generation. Running the test with the repository's `tsx` runner after `prisma generate` passed.
-- Route smoke testing confirms page rendering, not complete CRUD or financial transaction correctness. Items marked Partial must not be represented as fully end-to-end tested.
+- Route smoke testing confirms page rendering, not complete CRUD or financial transaction correctness. Billing browser CRUD and several payment operations remain partial even though the direct-handler billing scenarios are reported separately.

@@ -127,6 +127,41 @@ test("exam protection and concurrent salary payments work on QA database", async
     assert.equal(missingMarksResponse.status, 409);
     assert.match(missingMarks.error, /2 student-subject mark entries are missing/);
 
+    const omittedMarkResponse = await marksApi.POST(
+      new Request("http://qa.local/api/marks", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          examSubjectId: examSubject.id,
+          studentId: students[0].id,
+        }),
+      }),
+    );
+    assert.equal(omittedMarkResponse.status, 400);
+    assert.equal(
+      await appPrisma.mark.count({
+        where: {
+          examSubjectId: examSubject.id,
+          studentId: students[0].id,
+        },
+      }),
+      0,
+    );
+
+    const blankMarkResponse = await marksApi.POST(
+      new Request("http://qa.local/api/marks", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          examSubjectId: examSubject.id,
+          studentId: students[0].id,
+          theoryMarks: "",
+          practicalMarks: 0,
+        }),
+      }),
+    );
+    assert.equal(blankMarkResponse.status, 400);
+
     const firstMarkResponse = await marksApi.POST(
       new Request("http://qa.local/api/marks", {
         method: "POST",

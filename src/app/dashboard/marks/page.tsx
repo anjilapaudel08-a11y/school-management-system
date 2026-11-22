@@ -345,10 +345,15 @@ export default function MarksPage() {
       return "Marks data is unavailable.";
     }
 
-    const theoryMarks = Number(student.theoryMarks || 0);
-    const practicalMarks = Number(
-      student.practicalMarks || 0
-    );
+    if (
+      student.theoryMarks.trim() === "" ||
+      student.practicalMarks.trim() === ""
+    ) {
+      return "Enter theory and practical marks. Enter 0 explicitly when applicable.";
+    }
+
+    const theoryMarks = Number(student.theoryMarks);
+    const practicalMarks = Number(student.practicalMarks);
 
     if (
       !Number.isFinite(theoryMarks) ||
@@ -414,12 +419,8 @@ export default function MarksPage() {
           body: JSON.stringify({
             examSubjectId: marksData.examSubject.id,
             studentId: student.studentId,
-            theoryMarks: Number(
-              student.theoryMarks || 0
-            ),
-            practicalMarks: Number(
-              student.practicalMarks || 0
-            ),
+            theoryMarks: Number(student.theoryMarks),
+            practicalMarks: Number(student.practicalMarks),
           }),
         });
 
@@ -677,15 +678,13 @@ export default function MarksPage() {
 
                   <tbody>
                     {marksData.students.map((student) => {
-                      const theory = Number(
-                        student.theoryMarks || 0
-                      );
-
-                      const practical = Number(
-                        student.practicalMarks || 0
-                      );
-
-                      const total = theory + practical;
+                      const hasCompleteMarks =
+                        student.theoryMarks.trim() !== "" &&
+                        student.practicalMarks.trim() !== "";
+                      const total = hasCompleteMarks
+                        ? Number(student.theoryMarks) +
+                          Number(student.practicalMarks)
+                        : null;
 
                       return (
                         <tr
@@ -753,7 +752,7 @@ export default function MarksPage() {
                           </td>
 
                           <td className="px-4 py-3 text-base font-semibold">
-                            {total}
+                            {total ?? "-"}
                           </td>
                         </tr>
                       );

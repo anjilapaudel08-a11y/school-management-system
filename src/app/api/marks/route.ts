@@ -146,6 +146,13 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: "Invalid marks request." },
+        { status: 400 },
+      );
+    }
+
     const examSubjectId =
       typeof body.examSubjectId === "string"
         ? body.examSubjectId
@@ -156,14 +163,6 @@ export async function POST(request: Request) {
         ? body.studentId
         : "";
 
-    const theoryMarks = Number(
-      body.theoryMarks ?? 0
-    );
-
-    const practicalMarks = Number(
-      body.practicalMarks ?? 0
-    );
-
     if (!examSubjectId || !studentId) {
       return NextResponse.json(
         {
@@ -173,6 +172,28 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    const hasTheoryMarks =
+      typeof body.theoryMarks === "number" ||
+      (typeof body.theoryMarks === "string" &&
+        body.theoryMarks.trim() !== "");
+    const hasPracticalMarks =
+      typeof body.practicalMarks === "number" ||
+      (typeof body.practicalMarks === "string" &&
+        body.practicalMarks.trim() !== "");
+
+    if (!hasTheoryMarks || !hasPracticalMarks) {
+      return NextResponse.json(
+        {
+          error:
+            "Theory and practical marks are required. Enter 0 explicitly when applicable.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const theoryMarks = Number(body.theoryMarks);
+    const practicalMarks = Number(body.practicalMarks);
 
     if (
       !Number.isFinite(theoryMarks) ||
