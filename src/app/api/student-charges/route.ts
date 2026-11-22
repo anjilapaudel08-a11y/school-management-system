@@ -6,6 +6,7 @@ import {
   FeeFrequency,
   FeeType,
 } from "@/generated/prisma/client";
+import { isPrismaErrorCode } from "@/lib/prisma-error";
 
 const allowedStudentChargeTypes: FeeType[] = [
   FeeType.BUS,
@@ -652,13 +653,13 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json(
       charge
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(
       "PUT student charge error:",
       error
     );
 
-    if (error?.code === "P2025") {
+    if (isPrismaErrorCode(error, "P2025")) {
       return NextResponse.json(
         {
           error:
@@ -714,13 +715,13 @@ export async function DELETE(
       message:
         "Student charge deleted successfully.",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(
       "DELETE student charge error:",
       error
     );
 
-    if (error?.code === "P2025") {
+    if (isPrismaErrorCode(error, "P2025")) {
       return NextResponse.json(
         {
           error:

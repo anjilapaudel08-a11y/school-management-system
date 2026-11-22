@@ -334,13 +334,12 @@ export default function StudentChargesPage() {
 
     initialLoadStartedRef.current = true;
     void loadInitialData();
+    // This one-time loader only captures stable state setters and refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadInitialData() {
     try {
-      setLoading(true);
-      setError("");
-
       const [yearsResponse, studentsResponse] = await Promise.all([
         fetch("/api/academic-years"),
         fetch("/api/students"),
@@ -353,6 +352,7 @@ export default function StudentChargesPage() {
       const yearsData = await yearsResponse.json();
       const studentsData = await studentsResponse.json();
 
+      setError("");
       const years: AcademicYear[] = Array.isArray(yearsData)
         ? yearsData
         : yearsData.academicYears ?? [];
@@ -390,8 +390,6 @@ export default function StudentChargesPage() {
 
     if (!academicYearId) {
       chargeRequestRef.current += 1;
-      setCharges([]);
-      setChargesLoading(false);
       return;
     }
 
@@ -402,9 +400,6 @@ export default function StudentChargesPage() {
     const requestId = ++chargeRequestRef.current;
 
     try {
-      setChargesLoading(true);
-      setError("");
-
       const response = await fetch(
         `/api/student-charges?academicYearId=${encodeURIComponent(yearId)}`
       );
@@ -419,6 +414,7 @@ export default function StudentChargesPage() {
         : data.charges ?? [];
 
       if (requestId === chargeRequestRef.current) {
+        setError("");
         setCharges(chargeList);
       }
     } catch (err) {
@@ -683,7 +679,13 @@ export default function StudentChargesPage() {
             </label>
             <select
               value={academicYearId}
-              onChange={(event) => setAcademicYearId(event.target.value)}
+              onChange={(event) => {
+                const yearId = event.target.value;
+                chargeRequestRef.current += 1;
+                setCharges([]);
+                setChargesLoading(Boolean(yearId));
+                setAcademicYearId(yearId);
+              }}
               className="w-full rounded-lg border border-gray-300 px-3 py-2"
             >
               <option value="">Select academic year</option>

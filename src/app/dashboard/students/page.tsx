@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { BikramDatePicker } from "@inicrea/bikram-sambat-react";
 import "@inicrea/bikram-sambat-react/styles.css";
 import { adDateToBSInput, bsInputToADDate } from "@/lib/nepali-date";
@@ -96,6 +97,7 @@ const emptyForm: StudentForm = {
 };
 
 export default function StudentsPage() {
+  const router = useRouter();
   const [students, setStudents] = useState<Student[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
@@ -116,9 +118,6 @@ export default function StudentsPage() {
 
   const loadStudents = async () => {
     try {
-      setLoading(true);
-      setError("");
-
       const response = await fetch("/api/students", {
         cache: "no-store",
       });
@@ -129,6 +128,7 @@ export default function StudentsPage() {
         throw new Error(data.error || "Failed to load students.");
       }
 
+      setError("");
       setStudents(data);
     } catch (err) {
       setError(
@@ -194,6 +194,8 @@ export default function StudentsPage() {
   };
 
   useEffect(() => {
+    // These loaders update state only after their requests complete.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadStudents();
     loadAcademicYears();
     loadClasses();
@@ -482,7 +484,7 @@ export default function StudentsPage() {
   };
 
   const goToProfile = (studentId: string) => {
-    window.location.href = `/dashboard/students/${studentId}`;
+    router.push(`/dashboard/students/${studentId}`);
   };
 
   return (
@@ -730,7 +732,7 @@ export default function StudentsPage() {
 
                 {editingStudent && (
                   <p className="mt-1 text-xs text-(--muted)">
-                    Select an academic year to edit that year's
+                    Select an academic year to edit that year&apos;s
                     enrollment without changing other years.
                   </p>
                 )}

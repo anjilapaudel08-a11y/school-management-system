@@ -134,7 +134,7 @@ export default function AcademicYearsPage() {
         <div>
           <h1 className="text-2xl font-semibold">Academic Years</h1>
           <p className="text-sm text-gray-500">
-            Manage your school's academic years.
+            Manage your school&apos;s academic years.
           </p>
         </div>
 

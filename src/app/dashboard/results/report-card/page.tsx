@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Image from "next/image";
 
 type School = {
   id: string;
@@ -246,9 +247,12 @@ export default function ReportCardPage() {
             {/* LOGO */}
 
             {school.logo ? (
-              <img
+              <Image
                 src={school.logo}
                 alt={school.name}
+                width={80}
+                height={80}
+                unoptimized
                 className="h-20 w-20 object-contain"
               />
             ) : (

@@ -336,7 +336,22 @@ export async function GET(
     // This avoids the TypeScript/Prisma issue you were seeing.
     // ---------------------------------------------------------
 
-    let formattedExams: Array<any> = [];
+    let formattedExams: Array<{
+      id: string;
+      name: string;
+      term: { id: string; name: string; order: number };
+      startDate: Date | null;
+      endDate: Date | null;
+      subjects: Array<{
+        id: string;
+        subject: { id: string; name: string; code: string | null };
+        theoryFullMarks: number;
+        practicalFullMarks: number;
+        theoryMarks: number | null;
+        practicalMarks: number | null;
+        totalMarks: number | null;
+      }>;
+    }> = [];
 
     if (enrollment) {
       const exams = await prisma.exam.findMany({

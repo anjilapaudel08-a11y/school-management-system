@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { FeeType, FeeFrequency } from "@/generated/prisma/client";
+import { isPrismaErrorCode } from "@/lib/prisma-error";
 
 export async function GET(request: NextRequest) {
   try {
@@ -102,10 +103,10 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(fee, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("POST fees error:", error);
 
-    if (error?.code === "P2002") {
+    if (isPrismaErrorCode(error, "P2002")) {
       return NextResponse.json(
         {
           error:
@@ -217,17 +218,17 @@ export async function PUT(request: NextRequest) {
     });
 
     return NextResponse.json(fee);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("PUT fees error:", error);
 
-    if (error?.code === "P2025") {
+    if (isPrismaErrorCode(error, "P2025")) {
       return NextResponse.json(
         { error: "Fee structure not found" },
         { status: 404 }
       );
     }
 
-    if (error?.code === "P2002") {
+    if (isPrismaErrorCode(error, "P2002")) {
       return NextResponse.json(
         {
           error:
@@ -263,10 +264,10 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({
       message: "Fee structure deleted successfully",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("DELETE fees error:", error);
 
-    if (error?.code === "P2025") {
+    if (isPrismaErrorCode(error, "P2025")) {
       return NextResponse.json(
         { error: "Fee structure not found" },
         { status: 404 }

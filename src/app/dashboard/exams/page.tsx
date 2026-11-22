@@ -168,8 +168,6 @@ export default function ExamsPage() {
     }
 
     try {
-      setLoadingTerms(true);
-
       const response = await fetch(
         `/api/academic-terms?academicYearId=${yearId}`
       );
@@ -180,6 +178,7 @@ export default function ExamsPage() {
 
       const data = await response.json();
 
+      setError("");
       setTerms(data);
 
       if (data.length > 0) {
@@ -211,8 +210,6 @@ export default function ExamsPage() {
     }
 
     try {
-      setLoadingSubjects(true);
-
       const response = await fetch(
         `/api/class-subjects?classId=${selectedClassId}&academicYearId=${selectedYearId}`
       );
@@ -225,6 +222,7 @@ export default function ExamsPage() {
 
       const data = await response.json();
 
+      setError("");
       setClassSubjects(data);
       setSelectedSubjects([]);
     } catch (error) {
@@ -250,8 +248,6 @@ export default function ExamsPage() {
     }
 
     try {
-      setLoadingExams(true);
-
       const response = await fetch(
         `/api/exams?termId=${selectedTermId}&classId=${selectedClassId}`
       );
@@ -262,6 +258,7 @@ export default function ExamsPage() {
 
       const data = await response.json();
 
+      setError("");
       setExams(data);
     } catch (error) {
       console.error(error);
@@ -279,12 +276,11 @@ export default function ExamsPage() {
   useEffect(() => {
     async function loadInitialData() {
       try {
-        setError("");
-
         await Promise.all([
           fetchAcademicYears(),
           fetchClasses(),
         ]);
+        setError("");
       } catch (error) {
         console.error(error);
 
@@ -303,18 +299,24 @@ export default function ExamsPage() {
 
   useEffect(() => {
     if (academicYearId) {
+      // The loader applies state only after the request completes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchTerms(academicYearId);
     }
   }, [academicYearId]);
 
   useEffect(() => {
     if (academicYearId && classId) {
+      // The loader applies state only after the request completes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchClassSubjects(classId, academicYearId);
     }
   }, [academicYearId, classId]);
 
   useEffect(() => {
     if (termId && classId) {
+      // The loader applies state only after the request completes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchExams(termId, classId);
     }
   }, [termId, classId]);

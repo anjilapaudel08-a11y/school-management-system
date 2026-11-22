@@ -305,11 +305,7 @@ export default function BillsPage() {
     try {
       if (showRefreshing) {
         setRefreshing(true);
-      } else {
-        setLoading(true);
       }
-
-      setError("");
 
       const response = await fetch(
         "/api/bills",
@@ -335,6 +331,8 @@ export default function BillsPage() {
         );
       }
 
+
+      setError("");
       setBills(data);
     } catch (err) {
       console.error(
@@ -385,6 +383,8 @@ export default function BillsPage() {
   }
 
   useEffect(() => {
+    // These loaders update state only after their requests complete.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadBills();
     loadAcademicYears();
   }, []);

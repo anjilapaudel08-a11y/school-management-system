@@ -65,9 +65,6 @@ export default function AcademicTermsPage() {
     }
 
     try {
-      setLoadingTerms(true);
-      setError("");
-
       const response = await fetch(
         `/api/academic-terms?academicYearId=${selectedYearId}`
       );
@@ -78,6 +75,7 @@ export default function AcademicTermsPage() {
 
       const data = await response.json();
 
+      setError("");
       setTerms(data);
     } catch (error) {
       console.error(error);
@@ -95,8 +93,8 @@ export default function AcademicTermsPage() {
   useEffect(() => {
     async function loadAcademicYears() {
       try {
-        setError("");
         await fetchAcademicYears();
+        setError("");
       } catch (error) {
         console.error(error);
 
@@ -115,6 +113,8 @@ export default function AcademicTermsPage() {
 
   useEffect(() => {
     if (academicYearId) {
+      // The loader applies state only after the request completes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchTerms(academicYearId);
     }
   }, [academicYearId]);

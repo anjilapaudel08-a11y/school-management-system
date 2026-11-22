@@ -132,10 +132,6 @@ export default function TeacherAssignmentsPage() {
     }
 
     try {
-      setLoadingAssignments(true);
-      setError("");
-      setSuccess("");
-
       const response = await fetch(
         `/api/teacher-assignments?academicYearId=${selectedAcademicYearId}&classId=${selectedClassId}`
       );
@@ -148,6 +144,8 @@ export default function TeacherAssignmentsPage() {
 
       const data = await response.json();
 
+      setError("");
+      setSuccess("");
       setAssignments(data);
     } catch (error) {
       console.error(error);
@@ -165,14 +163,13 @@ export default function TeacherAssignmentsPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        setError("");
-
         await Promise.all([
           fetchAcademicYears(),
           fetchClasses(),
           fetchTeachers(),
           fetchSubjects(),
         ]);
+        setError("");
       } catch (error) {
         console.error(error);
 
@@ -191,6 +188,8 @@ export default function TeacherAssignmentsPage() {
 
   useEffect(() => {
     if (academicYearId && classId) {
+      // The loader applies state only after the request completes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchAssignments(academicYearId, classId);
     }
   }, [academicYearId, classId]);

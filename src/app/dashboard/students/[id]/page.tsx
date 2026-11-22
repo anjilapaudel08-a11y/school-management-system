@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BS_MONTHS, formatBSDate } from "@/lib/nepali-date";
 
 type AcademicYear = {
@@ -178,7 +178,15 @@ type ProfileData = {
     payments: Payment[];
     discounts: Discount[];
     charges: Charge[];
-    credits: any[];
+    credits: {
+      id: string;
+      amount: number;
+      appliedAmount: number;
+      remainingAmount: number;
+      source: string;
+      notes: string | null;
+      createdAt: string;
+    }[];
   };
 
   academic: {
@@ -223,13 +231,8 @@ export default function StudentProfilePage() {
   const [error, setError] =
     useState("");
 
-  async function loadProfile(
-    yearId?: string
-  ) {
+  const loadProfile = useCallback(async (yearId?: string) => {
     try {
-      setLoading(true);
-      setError("");
-
       let url =
         `/api/students/${studentId}/profile`;
 
@@ -252,6 +255,7 @@ export default function StudentProfilePage() {
         );
       }
 
+      setError("");
       setData(result);
 
       if (result.selectedAcademicYear?.id) {
@@ -268,13 +272,15 @@ export default function StudentProfilePage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [studentId]);
 
   useEffect(() => {
     if (studentId) {
-      loadProfile();
+      // The loader applies state only after the request completes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void loadProfile();
     }
-  }, [studentId]);
+  }, [loadProfile, studentId]);
 
   function handleYearChange(
     event: React.ChangeEvent<HTMLSelectElement>
@@ -282,6 +288,7 @@ export default function StudentProfilePage() {
     const yearId = event.target.value;
 
     setSelectedYearId(yearId);
+    setLoading(true);
 
     loadProfile(yearId);
   }

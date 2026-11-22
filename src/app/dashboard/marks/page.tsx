@@ -210,8 +210,12 @@ export default function MarksPage() {
       setExamSubjects(subjects);
 
       if (subjects.length > 0) {
+        setLoadingMarks(true);
+        setError("");
+        setSuccess("");
         setExamSubjectId(subjects[0].id);
       } else {
+        setLoadingMarks(false);
         setExamSubjectId("");
       }
     } catch (error) {
@@ -234,10 +238,6 @@ export default function MarksPage() {
     }
 
     try {
-      setLoadingMarks(true);
-      setError("");
-      setSuccess("");
-
       const response = await fetch(
         `/api/marks?examSubjectId=${selectedExamSubjectId}`
       );
@@ -271,12 +271,11 @@ export default function MarksPage() {
   useEffect(() => {
     async function loadInitialData() {
       try {
-        setError("");
-
         await Promise.all([
           fetchAcademicYears(),
           fetchClasses(),
         ]);
+        setError("");
       } catch (error) {
         console.error(error);
 
@@ -295,18 +294,24 @@ export default function MarksPage() {
 
   useEffect(() => {
     if (academicYearId) {
+      // The loader applies state only after the request completes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchTerms(academicYearId);
     }
   }, [academicYearId]);
 
   useEffect(() => {
     if (termId && classId) {
+      // The loader applies state only after the request completes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchExamSubjects(termId, classId);
     }
   }, [termId, classId]);
 
   useEffect(() => {
     if (examSubjectId) {
+      // The loader applies state only after the request completes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchMarks(examSubjectId);
     }
   }, [examSubjectId]);
@@ -564,9 +569,12 @@ export default function MarksPage() {
 
             <select
               value={examSubjectId}
-              onChange={(e) =>
-                setExamSubjectId(e.target.value)
-              }
+               onChange={(e) => {
+                 setLoadingMarks(Boolean(e.target.value));
+                 setError("");
+                 setSuccess("");
+                 setExamSubjectId(e.target.value);
+               }}
               disabled={
                 loadingExams ||
                 !termId ||

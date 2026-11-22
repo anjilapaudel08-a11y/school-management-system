@@ -214,9 +214,6 @@ export default function DiscountsPage() {
     }
 
     try {
-      setLoading(true);
-      setError("");
-
       const response = await fetch(
         `/api/student-discounts?academicYearId=${encodeURIComponent(
           yearId
@@ -229,6 +226,7 @@ export default function DiscountsPage() {
 
       const data: StudentDiscount[] = await response.json();
 
+      setError("");
       setDiscounts(data);
     } catch (err) {
       console.error(err);
@@ -254,6 +252,8 @@ export default function DiscountsPage() {
   useEffect(() => {
     if (!academicYearId) return;
 
+    // The loader applies state only after the request completes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDiscounts(academicYearId);
   }, [academicYearId]);
 

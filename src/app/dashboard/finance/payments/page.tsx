@@ -100,12 +100,8 @@ export default function PaymentsPage() {
 
   async function loadPayments(showRefresh = false) {
     try {
-      setError("");
-
       if (showRefresh) {
         setRefreshing(true);
-      } else {
-        setLoading(true);
       }
 
       const response = await fetch("/api/payments", {
@@ -123,6 +119,7 @@ export default function PaymentsPage() {
         );
       }
 
+      setError("");
       setPayments(
         "payments" in data ? data.payments : []
       );
@@ -141,6 +138,8 @@ export default function PaymentsPage() {
   }
 
   useEffect(() => {
+    // The loader applies state only after the request completes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadPayments();
   }, []);
 

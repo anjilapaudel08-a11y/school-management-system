@@ -77,13 +77,12 @@ export default function FeeStructurePage() {
     initialLoadStartedRef.current = true;
 
     loadInitialData();
+    // This one-time loader only captures stable state setters and refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadInitialData() {
     try {
-      setLoading(true);
-      setError("");
-
       const [yearsResponse, classesResponse] = await Promise.all([
         fetch("/api/academic-years"),
         fetch("/api/classes"),
@@ -98,6 +97,7 @@ export default function FeeStructurePage() {
       const yearsData = await yearsResponse.json();
       const classesData = await classesResponse.json();
 
+      setError("");
       const years = Array.isArray(yearsData)
         ? yearsData
         : yearsData.academicYears ?? [];
@@ -154,7 +154,6 @@ export default function FeeStructurePage() {
     }
 
     if (!academicYearId || !classId) {
-      setFees([]);
       return;
     }
 
@@ -168,9 +167,6 @@ export default function FeeStructurePage() {
     const requestId = ++feeRequestRef.current;
 
     try {
-      setFeesLoading(true);
-      setError("");
-
       const response = await fetch(
         `/api/fees?academicYearId=${yearId}&classId=${selectedClassId}`
       );
@@ -185,6 +181,7 @@ export default function FeeStructurePage() {
         ? data
         : data.fees ?? [];
 
+      setError("");
       /*
        * Only apply the result if this is still the
        * latest fee request.
@@ -444,7 +441,11 @@ export default function FeeStructurePage() {
             <select
               value={academicYearId}
               onChange={(event) =>
-                setAcademicYearId(event.target.value)
+                        (() => {
+                          setFees([]);
+                          setFeesLoading(Boolean(event.target.value && classId));
+                          setAcademicYearId(event.target.value);
+                        })()
               }
               className="w-full rounded-lg border border-gray-300 px-3 py-2"
             >
@@ -474,7 +475,11 @@ export default function FeeStructurePage() {
             <select
               value={classId}
               onChange={(event) =>
-                setClassId(event.target.value)
+                (() => {
+                  setFees([]);
+                  setFeesLoading(Boolean(event.target.value && academicYearId));
+                  setClassId(event.target.value);
+                })()
               }
               className="w-full rounded-lg border border-gray-300 px-3 py-2"
             >

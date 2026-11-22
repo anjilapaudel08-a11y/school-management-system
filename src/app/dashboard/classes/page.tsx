@@ -20,8 +20,6 @@ const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function fetchClasses() {
     try {
-      setError("");
-
       const response = await fetch("/api/classes");
 
       if (!response.ok) {
@@ -29,6 +27,7 @@ const [deletingId, setDeletingId] = useState<string | null>(null);
       }
 
       const data = await response.json();
+      setError("");
       setClasses(data);
     } catch (error) {
       console.error(error);
@@ -43,6 +42,8 @@ const [deletingId, setDeletingId] = useState<string | null>(null);
   }
 
   useEffect(() => {
+    // The loader applies state only after the request completes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchClasses();
   }, []);
 

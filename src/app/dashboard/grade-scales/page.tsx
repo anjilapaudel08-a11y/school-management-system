@@ -48,9 +48,6 @@ export default function GradeScalesPage() {
 
   async function fetchGradeScales() {
     try {
-      setLoading(true);
-      setError("");
-
       const response = await fetch("/api/grade-scales");
 
       if (!response.ok) {
@@ -63,6 +60,7 @@ export default function GradeScalesPage() {
 
       const data = await response.json();
 
+      setError("");
       setGradeScales(data);
     } catch (error) {
       console.error(error);
@@ -78,6 +76,8 @@ export default function GradeScalesPage() {
   }
 
   useEffect(() => {
+    // The loader applies state only after the request completes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchGradeScales();
   }, []);
 

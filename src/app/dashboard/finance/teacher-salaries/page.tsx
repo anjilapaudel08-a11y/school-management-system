@@ -267,11 +267,7 @@ export default function TeacherSalariesPage() {
     try {
       if (showRefresh) {
         setRefreshing(true);
-      } else {
-        setLoading(true);
       }
-
-      setError("");
 
       const [teacherResponse, yearResponse, salaryResponse] =
         await Promise.all([
@@ -318,6 +314,7 @@ export default function TeacherSalariesPage() {
         ? salaryData
         : salaryData?.salaries ?? [];
 
+      setError("");
       setTeachers(teacherList);
       setAcademicYears(yearList);
       setSalaries(salaryList);
@@ -352,6 +349,8 @@ export default function TeacherSalariesPage() {
   }
 
   useEffect(() => {
+    // The loader applies state only after its requests complete.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadData();
   }, []);
 
@@ -1178,7 +1177,7 @@ export default function TeacherSalariesPage() {
                     expandedSalaryId === salary.id;
 
                   return (
-                    <>
+                    <Fragment key={salary.id}>
                       <tr
                         key={salary.id}
                         className="transition hover:bg-gray-50"
@@ -1493,7 +1492,7 @@ export default function TeacherSalariesPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>

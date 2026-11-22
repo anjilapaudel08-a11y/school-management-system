@@ -101,10 +101,6 @@ export default function ClassSubjectsPage() {
     }
 
     try {
-      setLoadingAssignments(true);
-      setError("");
-      setSuccess("");
-
       const response = await fetch(
         `/api/class-subjects?classId=${selectedClassId}&academicYearId=${selectedAcademicYearId}`
       );
@@ -115,6 +111,8 @@ export default function ClassSubjectsPage() {
 
       const data: ClassSubject[] = await response.json();
 
+      setError("");
+      setSuccess("");
       setAssignedSubjects(
         data.map((item) => item.subject.id)
       );
@@ -134,13 +132,12 @@ export default function ClassSubjectsPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        setError("");
-
         await Promise.all([
           fetchAcademicYears(),
           fetchClasses(),
           fetchSubjects(),
         ]);
+        setError("");
       } catch (error) {
         console.error(error);
 
@@ -159,6 +156,8 @@ export default function ClassSubjectsPage() {
 
   useEffect(() => {
     if (classId && academicYearId) {
+      // The loader applies state only after the request completes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchAssignedSubjects(classId, academicYearId);
     }
   }, [classId, academicYearId]);

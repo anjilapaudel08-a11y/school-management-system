@@ -284,15 +284,6 @@ export default function ResultsPage() {
   }, [termId, classId]);
 
   // --------------------------------------------------
-  // CLEAR RESULTS WHEN CLASS CHANGES
-  // --------------------------------------------------
-
-  useEffect(() => {
-    setResults(null);
-    setExamId("");
-  }, [classId]);
-
-  // --------------------------------------------------
   // CALCULATE RESULTS
   // --------------------------------------------------
 
@@ -490,6 +481,9 @@ export default function ResultsPage() {
               value={classId}
               onChange={(event) => {
                 setClassId(event.target.value);
+                setExamId("");
+                setExams([]);
+                setResults(null);
               }}
               className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
             >

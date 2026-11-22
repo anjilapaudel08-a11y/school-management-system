@@ -237,7 +237,7 @@ async function main() {
   // 9. ACADEMIC TERMS
   // ---------------------------------------------------------
 
-  const term1 = await prisma.academicTerm.create({
+  await prisma.academicTerm.create({
     data: {
       academicYearId: academicYear.id,
       name: "Term 1",
@@ -245,7 +245,7 @@ async function main() {
     },
   });
 
-  const term2 = await prisma.academicTerm.create({
+  await prisma.academicTerm.create({
     data: {
       academicYearId: academicYear.id,
       name: "Term 2",
@@ -253,7 +253,7 @@ async function main() {
     },
   });
 
-  const term3 = await prisma.academicTerm.create({
+  await prisma.academicTerm.create({
     data: {
       academicYearId: academicYear.id,
       name: "Term 3",
@@ -261,7 +261,7 @@ async function main() {
     },
   });
 
-  const term4 = await prisma.academicTerm.create({
+  await prisma.academicTerm.create({
     data: {
       academicYearId: academicYear.id,
       name: "Term 4",

@@ -160,15 +160,8 @@ export default function NewBillPage() {
 
   const [success, setSuccess] = useState("");
 
-  useEffect(() => {
-    loadAcademicYears();
-    loadStudents();
-  }, []);
-
   async function loadAcademicYears() {
     try {
-      setLoadingYears(true);
-
       const response = await fetch(
         "/api/academic-years",
         {
@@ -223,8 +216,6 @@ export default function NewBillPage() {
 
   async function loadStudents() {
     try {
-      setLoadingStudents(true);
-
       const response = await fetch(
         "/api/students",
         {
@@ -259,6 +250,13 @@ export default function NewBillPage() {
       setLoadingStudents(false);
     }
   }
+
+  useEffect(() => {
+    // Both loaders update state only after their requests complete.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadAcademicYears();
+    loadStudents();
+  }, []);
 
   const selectedAcademicYear =
     useMemo(() => {
@@ -541,7 +539,7 @@ export default function NewBillPage() {
             </h1>
 
             <p className="mt-1 text-sm text-gray-500">
-              Generate a bill using the student's
+              Generate a bill using the student&apos;s
               active fees, charges and applicable
               discounts.
             </p>
