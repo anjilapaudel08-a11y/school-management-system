@@ -17,6 +17,7 @@ const approvedRanges = [
 ];
 
 const boundaries = [
+  [0, "NG", 0],
   [34.99, "NG", 0],
   [35, "D", 1.6],
   [39.99, "D", 1.6],
@@ -64,7 +65,18 @@ test("preserves inclusive legacy grade-scale semantics", () => {
 });
 
 test("maps grades to approved performance labels", () => {
-  assert.equal(getPerformanceLevel("A+"), "Outstanding");
-  assert.equal(getPerformanceLevel("A"), "Excellent");
-  assert.equal(getPerformanceLevel("NG"), "Not Graded");
+  const performanceLevels = [
+    ["A+", "Outstanding"],
+    ["A", "Excellent"],
+    ["B+", "Very Good"],
+    ["B", "Good"],
+    ["C+", "Satisfactory"],
+    ["C", "Acceptable"],
+    ["D", "Basic"],
+    ["NG", "Not Graded"],
+  ] as const;
+
+  for (const [grade, performanceLevel] of performanceLevels) {
+    assert.equal(getPerformanceLevel(grade), performanceLevel);
+  }
 });
