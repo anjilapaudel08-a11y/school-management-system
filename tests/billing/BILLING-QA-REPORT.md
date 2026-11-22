@@ -19,6 +19,12 @@ Fixture: BILL_QA_2083 (isolated school; existing school data was not used)
 
 The broad suite is supplemented by focused live-database retests of quantity-based charges, concurrent bill numbering, idempotent payment retries, and student deletion with billing history.
 
+The runner emitted a `pg` deprecation warning about overlapping `client.query()` calls. Expected rejected-payment cases also logged server-side error stacks while returning the expected validation responses; their scenarios passed. Neither warning changed the pass/fail counts.
+
+## Browser UI retest (2026-11-22)
+
+Using the Accountant browser session against the separate fictional QA school, the bill form generated `BILL-000001` for Aarav Sharma for Baisakh 2083. The displayed bill total was Rs. 11,700: tuition Rs. 8,000, annual admission Rs. 2,500, computer lab Rs. 400, and examination Rs. 800. The UI accepted a Rs. 1,000 partial payment and displayed Rs. 10,700 remaining; a second Rs. 10,700 payment changed the bill to `PAID`, showed two payment-history rows, and reduced the remaining balance to zero. This was an additional UI smoke test, not part of the 70 direct-handler scenarios. No billing calculation or application logic was changed.
+
 ## Individual scenario report
 
 | Test ID | Scenario | Expected | Actual | Result |
@@ -30,9 +36,9 @@ The broad suite is supplemented by focused live-database retests of quantity-bas
 | A05 | Student-specific BUS and MISC charges | Rs. 26,700 | {"total":26700} | PASS |
 | A06 | Discounts exclude student-specific charges | Rs. 24,900 | {"total":24900,"discount":1800} | PASS |
 | A07 | Quantity-based BUS charge | Rs. 26,300 | {"total":26300,"bus":[{"quantity":6,"rate":800,"amount":4800}]} | PASS |
-| A08 | Student charge isolation | S001 has no S003 charges | {"studentId":"cmwrjlqu200089kw44opqo1f5","studentChargeItems":0} | PASS |
+| A08 | Student charge isolation | S001 has no S003 charges | {"studentId":"cmws37gop0008q4w4qc0k6fdt","studentChargeItems":0} | PASS |
 | A09 | Grade-specific fees | Rs. 24,600 | {"total":24600,"feeTypes":["TUITION","ADMISSION","COMPUTER_LAB","EXAM"]} | PASS |
-| SC01 | Student-charge frequency amounts | All student-charge frequencies use rate multiplied by their calculated quantity | {"chargeItems":[{"studentId":"cmwrjlrzp000c9kw4kcgxhdoh","description":"BUS Monthly","quantity":3,"amount":4500},{"studentId":"cmwrjlrzp000c9kw4kcgxhdoh","description":"Student Misc One-Time","quantity":1,"amount":700},{"studentId":"cmwrjlsp9000e9kw47nqr5g6w","description":"BUS Monthly","quantity":3,"amount":3000},{"studentId":"cmwrjlsp9000e9kw47nqr5g6w","description":"BUS Term Quantity Two","quantity":2,"amount":800},{"studentId":"cmwrjltev000g9kw43b72brv6","description":"BUS Monthly","quantity":3,"amount":3600},{"studentId":"cmwrjltev000g9kw43b72brv6","description":"BUS Annual Quantity Three","quantity":3,"amount":600}]} | PASS |
+| SC01 | Student-charge frequency amounts | All student-charge frequencies use rate multiplied by their calculated quantity | {"chargeItems":[{"studentId":"cmws37hrn000cq4w40f1jlhry","description":"BUS Monthly","quantity":3,"amount":4500},{"studentId":"cmws37hrn000cq4w40f1jlhry","description":"Student Misc One-Time","quantity":1,"amount":700},{"studentId":"cmws37ies000eq4w4tgme5gpy","description":"BUS Monthly","quantity":3,"amount":3000},{"studentId":"cmws37ies000eq4w4tgme5gpy","description":"BUS Term Quantity Two","quantity":2,"amount":800},{"studentId":"cmws37j16000gq4w4rlzxuxrp","description":"BUS Monthly","quantity":3,"amount":3600},{"studentId":"cmws37j16000gq4w4rlzxuxrp","description":"BUS Annual Quantity Three","quantity":3,"amount":600}]} | PASS |
 | SC02 | Unpaid first bill does not repeat charges | Unpaid first bill retains its charges; later bill adds neither duplicate charges nor old balances | {"firstBill":{"status":"UNPAID","total":26700,"studentChargeItems":2},"secondBill":{"total":17300,"studentChargeItems":0},"statement":{"originalBillDue":26700,"subsequentBillDue":17300,"totalDue":44000}} | PASS |
 | SC03 | Partial first bill does not repeat charges | Partial settlement stays on the original bill; later bill has no duplicate charge or balance | {"firstBill":{"status":"PARTIAL","outstanding":26600},"secondBill":{"total":17300,"studentChargeItems":0},"statement":{"originalBillDue":26600,"subsequentBillDue":17300,"totalDue":43900}} | PASS |
 | SC04 | Charge remains eligible until active dates | A charge outside one period remains available to the next eligible period | {"earlyBillChargeItems":0,"eligibleBillCharge":{"quantity":1,"amount":1200}} | PASS |

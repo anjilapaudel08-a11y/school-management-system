@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isPrismaErrorCode } from "@/lib/prisma-error";
 
 type RouteContext = {
   params: Promise<{
@@ -57,6 +58,40 @@ export async function PATCH(
         { error: "Student not found." },
         { status: 404 }
       );
+    }
+
+    if (
+      body.admissionNumber !== undefined &&
+      body.admissionNumber !== null &&
+      typeof body.admissionNumber !== "string"
+    ) {
+      return NextResponse.json(
+        { error: "Admission number must be text." },
+        { status: 400 },
+      );
+    }
+
+    const admissionNumber =
+      typeof body.admissionNumber === "string" &&
+      body.admissionNumber.trim()
+        ? body.admissionNumber.trim()
+        : student.admissionNumber;
+
+    if (admissionNumber !== student.admissionNumber) {
+      const duplicate = await prisma.student.findFirst({
+        where: {
+          schoolId: student.schoolId,
+          admissionNumber,
+          id: { not: student.id },
+        },
+        select: { id: true },
+      });
+      if (duplicate) {
+        return NextResponse.json(
+          { error: "A student with this admission number already exists." },
+          { status: 409 },
+        );
+      }
     }
 
     const firstName =
@@ -217,6 +252,7 @@ export async function PATCH(
           id: student.id,
         },
         data: {
+          admissionNumber,
           firstName,
           middleName,
           lastName,
@@ -285,6 +321,13 @@ export async function PATCH(
 
     return NextResponse.json(updatedStudent);
   } catch (error) {
+    if (isPrismaErrorCode(error, "P2002")) {
+      return NextResponse.json(
+        { error: "A student with this admission number already exists." },
+        { status: 409 },
+      );
+    }
+
     console.error("Failed to update student:", error);
 
     return NextResponse.json(

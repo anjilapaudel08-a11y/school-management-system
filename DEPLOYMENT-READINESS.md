@@ -3,7 +3,25 @@
 **Assessment date:** 2026-11-22  
 **Decision:** **Not ready for school deployment yet.** The user-confirmed isolated QA database was used for focused end-to-end checks; production configuration, recovery rehearsal, and remaining billing coverage are still unverified.
 
-## Focused verification refresh (2026-11-22)
+## Post-reset QA follow-up (2026-11-22)
+
+The user authorized a destructive reset of the confirmed test-only Neon database and a new fictional dataset. The guarded reset ran against that QA target only, preserved all 15 applied migrations and the database schema, and did not run a migration. This replaces the earlier QA dataset; the pre-reset counts and historical-data findings below are retained as an audit trail, not as statements about current QA records or production data.
+
+The new dataset has 30 seeded students, 5 teachers, 12 classes, 5 subjects, and 6 complete examinations. UI QA added one fictional student and one paid bill. No billing logic or schema was changed.
+
+| Focus | Latest finding |
+|---|---|
+| Section removal | **Pass.** Source searches find no `/api/sections` requests or `sectionId` references in student workflows. Semantic HTML `<section>` elements remain; legacy database records and columns are preserved outside the explicitly authorized QA-data reset. |
+| Accountant login and access | **Pass in QA.** A temporary Accountant authenticated in the browser; prior route smoke coverage returned HTTP 200 for 25 student, academic, examination, results, and financial dashboard routes. The temporary account and its encrypted QA credential were removed after testing. No production credentials or systems were used. |
+| Marks and publication | **Pass in browser UI.** The incomplete-publication guard rejected missing marks; saving 50 and explicit 0 for the two students then allowed publication. Four Grade 5 term exams and one Grade 8 exam were also published and locked from the UI. |
+| Grades, boundaries, GPA, and position | **Pass in browser UI.** The Grade 5 result table showed all eight grades and all 16 configured percentage test values, including each lower/upper threshold pair. GPA and class positions rendered; Grade 8 results also showed 1st/2nd positions and the expected 3.44/3.36 GPAs. |
+| Report cards and print | **Pass in browser UI.** Generated a Grade 5 report card and opened a Grade 8 report card; both displayed subject marks, grades, GPA, and position. Print media hid the print control while retaining the marksheet. |
+| Billing UI | **Partial pass.** Generated a Baisakh 2083 bill for a fictional student (Rs. 11,700), posted Rs. 1,000 then Rs. 10,700 through the UI, and verified PARTIAL then PAID status, two payment-history rows, and zero remaining. Other billing forms and scenarios remain partial or untested. |
+| Historic published exams | **Pre-reset QA snapshot only.** The prior inspection found no unassigned scale among 48 published QA exams. Those records were removed by the authorized QA reset; the six new QA exams are published with the approved scale. No production historic exams were examined. The previous Grade 5 missing-mark and legacy-scale observations apply only to that prior QA snapshot. |
+| Validation | **Pass.** ESLint (no warnings), TypeScript, 9 focused grading unit tests, 2 QA integration tests, Prisma validation, 15-migration status, and production build. |
+| Billing suite | **47 pass, 0 fail, 10 blocked, 13 not executed.** An informational `pg` overlapping-query deprecation warning appeared. See [the billing QA report](./tests/billing/BILLING-QA-REPORT.md). |
+
+## Pre-reset focused verification snapshot (2026-11-22; historical QA data)
 
 The user confirmed the configured Neon database is test-only and authorized targeted QA writes and cleanup. All temporary accounts, exams, and marks created for this refresh were removed. The database returned to 49 exams / 48 published exams; no schema change or migration was made. No production credentials were exposed and no production system was accessed.
 

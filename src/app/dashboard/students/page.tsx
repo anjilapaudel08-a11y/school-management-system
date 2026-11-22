@@ -366,7 +366,7 @@ export default function StudentsPage() {
         ? `/api/students/${editingStudent.id}`
         : "/api/students";
 
-      const method = editingStudent ? "PUT" : "POST";
+      const method = editingStudent ? "PATCH" : "POST";
 
       const response = await fetch(url, {
         method,

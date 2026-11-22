@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isPrismaErrorCode } from "@/lib/prisma-error";
+
+class DuplicateAdmissionNumberError extends Error {}
 
 function parseOptionalDate(value: unknown) {
   if (value === undefined || value === null || value === "") {
@@ -85,6 +88,22 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
+
+    if (
+      body.admissionNumber !== undefined &&
+      body.admissionNumber !== null &&
+      typeof body.admissionNumber !== "string"
+    ) {
+      return NextResponse.json(
+        { error: "Admission number must be text." },
+        { status: 400 },
+      );
+    }
+
+    const requestedAdmissionNumber =
+      typeof body.admissionNumber === "string"
+        ? body.admissionNumber.trim()
+        : "";
 
     const firstName =
       typeof body.firstName === "string"
@@ -222,86 +241,97 @@ export async function POST(request: Request) {
       );
     }
 
-    /*
-     * Generate the next admission number.
-     *
-     * Current format:
-     * ADM-0001
-     * ADM-0002
-     * ADM-0003
-     */
+    const student = await prisma.$transaction(async (tx) => {
+      let admissionNumber = requestedAdmissionNumber;
 
-    const latestStudent =
-      await prisma.student.findFirst({
-        where: {
-          schoolId: school.id,
-        },
-        orderBy: {
-          admissionNumber: "desc",
-        },
-        select: {
-          admissionNumber: true,
-        },
-      });
-
-    let nextNumber = 1;
-
-    if (latestStudent) {
-      const match =
-        latestStudent.admissionNumber.match(/(\d+)$/);
-
-      if (match) {
-        nextNumber = Number(match[1]) + 1;
+      if (admissionNumber) {
+        const duplicate = await tx.student.findFirst({
+          where: {
+            schoolId: school.id,
+            admissionNumber,
+          },
+          select: { id: true },
+        });
+        if (duplicate) {
+          throw new DuplicateAdmissionNumberError();
+        }
+      } else {
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(
+            hashtextextended(${`student-admission-number:${school.id}`}, 0)
+          )
+        `;
+        const [latestStudent] = await tx.$queryRaw<
+          { maxNumber: bigint | null }[]
+        >`
+          SELECT MAX(
+            SUBSTRING("admissionNumber" FROM '^ADM-([0-9]+)$')::BIGINT
+          ) AS "maxNumber"
+          FROM "Student"
+          WHERE "schoolId" = ${school.id}
+        `;
+        const nextNumber = Number(latestStudent?.maxNumber ?? 0) + 1;
+        admissionNumber = `ADM-${String(nextNumber).padStart(4, "0")}`;
       }
-    }
 
-    const admissionNumber = `ADM-${String(
-      nextNumber
-    ).padStart(4, "0")}`;
-
-    const student = await prisma.student.create({
-      data: {
-        schoolId: school.id,
-        admissionNumber,
-        firstName,
-        middleName,
-        lastName,
-        dateOfBirth: dateOfBirth ?? null,
-        gender,
-        address,
-        phone,
-        email,
-        fatherName,
-        motherName,
-        guardianName,
-        guardianPhone,
-        enrollments: {
-          create: {
-            academicYearId,
-            classId,
-            rollNumber,
-          },
-        },
-      },
-      include: {
-        enrollments: {
-          include: {
-            academicYear: true,
-            class: true,
-          },
-          orderBy: {
-            academicYear: {
-              startDate: "desc",
+      return tx.student.create({
+        data: {
+          schoolId: school.id,
+          admissionNumber,
+          firstName,
+          middleName,
+          lastName,
+          dateOfBirth: dateOfBirth ?? null,
+          gender,
+          address,
+          phone,
+          email,
+          fatherName,
+          motherName,
+          guardianName,
+          guardianPhone,
+          enrollments: {
+            create: {
+              academicYearId,
+              classId,
+              rollNumber,
             },
           },
         },
-      },
+        include: {
+          enrollments: {
+            include: {
+              academicYear: true,
+              class: true,
+            },
+            orderBy: {
+              academicYear: {
+                startDate: "desc",
+              },
+            },
+          },
+        },
+      });
     });
 
     return NextResponse.json(student, {
       status: 201,
     });
   } catch (error) {
+    if (error instanceof DuplicateAdmissionNumberError) {
+      return NextResponse.json(
+        { error: "A student with this admission number already exists." },
+        { status: 409 },
+      );
+    }
+
+    if (isPrismaErrorCode(error, "P2002")) {
+      return NextResponse.json(
+        { error: "A student with this admission number already exists." },
+        { status: 409 },
+      );
+    }
+
     console.error("Failed to create student:", error);
 
     return NextResponse.json(
