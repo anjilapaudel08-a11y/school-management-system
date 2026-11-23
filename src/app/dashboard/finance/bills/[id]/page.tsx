@@ -49,6 +49,7 @@ type Payment = {
 type CreditApplication = {
   id: string;
   amount: string | number;
+  reversedAt: string | null;
   credit?: {
     id: string;
     amount: string | number;
@@ -225,7 +226,10 @@ export default function BillDetailPage({
     );
 
     const credit = bill.creditApplications.reduce(
-      (sum, application) => sum + toNumber(application.amount),
+      (sum, application) =>
+        application.reversedAt
+          ? sum
+          : sum + toNumber(application.amount),
       0
     );
 

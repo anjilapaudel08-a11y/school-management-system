@@ -1,0 +1,45 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/auth";
+
+type CreditAuthorization =
+  | {
+      ok: true;
+      actorId: string;
+    }
+  | {
+      ok: false;
+      response: NextResponse;
+    };
+
+export function authorizeCreditSession(session: {
+  user: { id: string; role: string };
+} | null): CreditAuthorization {
+  if (!session) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "You must be signed in." },
+        { status: 401 },
+      ),
+    };
+  }
+
+  if (session.user.role !== "ADMIN") {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "Only the Accountant can manage student credits." },
+        { status: 403 },
+      ),
+    };
+  }
+
+  return {
+    ok: true,
+    actorId: session.user.id,
+  };
+}
+
+export async function authorizeCreditManagement(): Promise<CreditAuthorization> {
+  return authorizeCreditSession(await auth());
+}

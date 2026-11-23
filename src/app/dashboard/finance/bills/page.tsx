@@ -30,6 +30,7 @@ type BillPayment = {
 type CreditApplication = {
   id: string;
   amount: string | number;
+  reversedAt?: string | null;
   credit?: {
     amount?: string | number;
   };
@@ -195,6 +196,10 @@ function getTotalCredits(
   return (
     bill.creditApplications ?? []
   ).reduce((sum, application) => {
+    if (application.reversedAt) {
+      return sum;
+    }
+
     const applicationAmount =
       toNumber(application.amount);
 

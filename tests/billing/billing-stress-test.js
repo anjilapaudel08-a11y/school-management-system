@@ -1807,17 +1807,17 @@ async function main() {
     }, "HIGH");
 
     for (const [id, name, reason] of focusedTestIds ? [] : [
-      ["E05", "Excess credit application rejected", "BLOCKED: no API, service, or UI creates or applies StudentCredit; schema models alone do not provide executable business behavior."],
-      ["E06", "Partial credit application", "BLOCKED: no API, service, or UI creates or applies StudentCredit; schema models alone do not provide executable business behavior."],
-      ["E07", "Duplicate credit application", "BLOCKED: no API, service, or UI creates or applies StudentCredit; schema models alone do not provide executable business behavior."],
-      ["I09", "Credit application transaction rollback", "BLOCKED: no credit-application transaction exists to inject a failure into."],
+      ["E05", "Excess credit application rejected", "Requires the approved audit migration and explicit QA-database write approval."],
+      ["E06", "Partial credit application", "Requires the approved audit migration and explicit QA-database write approval."],
+      ["E07", "Duplicate credit application", "Requires the approved audit migration and explicit QA-database write approval."],
+      ["I09", "Credit application transaction rollback", "Requires the approved audit migration and explicit QA-database write approval."],
     ]) {
       results.push({
         id,
         name,
         expected: "Scenario executed and independently verified",
-        actual: reason,
-        status: "BLOCKED",
+        actual: `NOT EXECUTED: covered by the separately gated student-credit.integration.test.js; ${reason}`,
+        status: "NOT EXECUTED",
         severity: "HIGH",
       });
     }

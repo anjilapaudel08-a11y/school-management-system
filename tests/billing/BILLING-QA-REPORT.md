@@ -5,6 +5,8 @@ Fixture: BILL_QA_2083 (isolated school; existing school data was not used)
 
 ## Overall results
 
+The most recent completed full billing-suite run was **before** the student-credit implementation:
+
 | Metric | Result |
 |---|---:|
 | Total scenarios | 75 |
@@ -15,15 +17,27 @@ Fixture: BILL_QA_2083 (isolated school; existing school data was not used)
 | Critical defects | 0 |
 | High-priority defects | 0 |
 
+## Student-credit implementation follow-up (2026-11-23)
+
+- Added Accountant-only manual credit issuance, same-year partial application, idempotency, reversal audit, and transaction-safe balance updates.
+- Applied migration `20261123100000_add_student_credit_workflows` to the verified isolated QA database after explicit approval. It is additive; existing payment, bill, credit, salary, and other QA records were not modified.
+- Existing credits with incomplete audit metadata remain visible but unavailable for application; no issuer, reason, date, or approval detail is fabricated.
+- Updated settlement readers to exclude reversed applications while retaining their history. Payment records and their actual paid amounts are not modified by credit operations.
+- Static verification: 7 credit rule/authorization tests and 4 billing unit tests pass; TypeScript, lint, Prisma schema validation, and the Webpack production build pass.
+- The gated credit integration suite passed against the verified QA target. It covered issuance/retry, partial application, caps, same-year restrictions, concurrency, payment immutability, injected rollback, reversal, and legacy-credit ineligibility. Its temporary rows were removed.
+- Accountant browser verification passed: issued a Rs. 250.50 credit, applied Rs. 200.00 to a temporary Rs. 1,000 bill, verified Rs. 50.50 remained, reversed the application, and confirmed the full Rs. 1,000 bill balance and retained reversal audit. The legacy unaudited credit remained disabled. The temporary credit, bill, and Accountant account were removed; a targeted database check found no test-created residue.
+- The complete stress billing suite has not been rerun since credit implementation; the pre-credit full run remains 71 PASS, 0 FAIL, 4 BLOCKED. The credit-specific integration suite and browser flow are separate verification.
+- Reproduce the gated integration run only against a verified QA target with the explicit environment confirmations `BILLING_TEST_CONFIRMATION=BILLING_QA_ONLY` and `CREDIT_QA_CONFIRMATION=STUDENT_CREDIT_QA_ONLY`, using `npx tsx --test tests/billing/student-credit.integration.test.js`. The test deletes only temporary IDs it creates.
+
 ## Execution note
 
-Final counts include focused retests of every initial failure. The first full run had a transient database disconnect in D02 and test-harness failures in I02, I07, I08, and `master`. D02 passed on retry. The rollback injector was fixed to restore Prisma's bound `$transaction` method; I02, I07, I08, and `master` then passed focused retries. I08's direct service call now catches only the expected injected failure and allows a longer test-only transaction wait. These were test-harness/environment issues, not application billing defects.
+The pre-implementation run's counts include focused retests of every initial failure. That run had a transient database disconnect in D02 and test-harness failures in I02, I07, I08, and `master`. D02 passed on retry. The rollback injector was fixed to restore Prisma's bound `$transaction` method; I02, I07, I08, and `master` then passed focused retries. I08's direct service call now catches only the expected injected failure and allows a longer test-only transaction wait. These were test-harness/environment issues, not application billing defects.
 
 The run emitted a `pg` overlapping-query deprecation warning. Expected rejected-payment cases also logged server-side error stacks while returning the expected validation responses; their scenarios passed.
 
-## Accountant browser retest (2026-11-22 to 2026-11-23)
+## Accountant browser retest before student-credit migration (2026-11-22 to 2026-11-23)
 
-The existing fictional QA dataset was preserved; no reset, truncate, reseed, or migration was run.
+At the time of this earlier browser retest, the fictional QA dataset was preserved; no reset, truncate, reseed, or migration was run. The later student-credit migration and verification are recorded above.
 
 - Fee structure creation and editing succeeded. A duplicate submission showed the expected HTTP 409 validation error; temporary fee rows were removed.
 - A student charge was created and edited; its test record was deleted and its absence verified. A shared bulk BUS charge was submitted for one student (`1 charges saved`), appeared in the student-charge workflow, and was removed afterward.
@@ -109,21 +123,21 @@ These are browser workflow checks against the fictional QA school, not productio
 | I07 | Waiver transaction rollback | Failure after waiver payment and bill update leaves neither the waiver nor status change | Focused retry passed; payment absent, paid amount 0, bill remains UNPAID | PASS |
 | I08 | Salary payment transaction rollback | Failure after salary-payment creation and salary update leaves the payment absent and salary pending | Focused retry passed; no salary payment persisted and salary remains PENDING | PASS |
 | master | Master bill, payment, waiver, and statement workflow | Successful bill settlement is reflected consistently in payments and account statements; previous due remains on its original bill | Focused retry passed; payment, waiver, original-bill due, next bill, and statement totals matched | PASS |
-| E05 | Excess credit application rejected | Reject an application that exceeds available credit | No credit application API, service, or UI exists | BLOCKED |
-| E06 | Partial credit application | Apply only the requested portion and retain the unused credit | No credit application API, service, or UI exists | BLOCKED |
-| E07 | Duplicate credit application | Prevent applying the same credit twice | No credit application API, service, or UI exists | BLOCKED |
-| I09 | Credit application transaction rollback | Inject a failure inside credit application and verify rollback | No credit application transaction exists | BLOCKED |
+| E05 | Excess credit application rejected | Reject an application that exceeds available credit or bill due | Integration rejected over-credit and over-bill applications; no excess balance was applied | PASS |
+| E06 | Partial credit application | Apply only the requested portion and retain the unused credit | Rs. 30.00 applied; a same-key retry replayed once; a separate Rs. 10.00 application left Rs. 10.00 credit and Rs. 60.00 bill due | PASS |
+| E07 | Duplicate credit application | Prevent retrying an application twice while allowing separate partial applications | Same-key/same-payload retry replayed; changed payload with the same key returned 409; one application row remained | PASS |
+| I09 | Credit application transaction rollback | Inject failures inside application and reversal and verify rollback | Injected failures left no application/balance update and left the unreversed application unchanged; successful reversal then restored balances | PASS |
 
 ## Defect report
 
 No application billing defects were reproduced. The five initial failures were traced to one transient test-database disconnect and defects in the test-only transaction-failure injector/assertion; focused reruns passed after the test harness was corrected.
 
-## Remaining blocked scenarios
+## Credit integration results
 
-- **E05-E07 — credit amount validation, partial application, and duplicate prevention:** `StudentCredit` and `BillCreditApplication` Prisma models exist, but there is no credit creation/application API, service, or UI. These behaviors cannot be exercised safely until that feature exists.
-- **I09 — credit-application rollback:** blocked for the same reason; there is no credit-application transaction into which a controlled failure can be injected.
+- **E05-E07 — excess, partial, duplicate, and same-year behavior:** passed in the gated QA integration test; same-year eligibility and idempotent retry behavior were verified.
+- **I09 — credit-application/reversal rollback:** passed with controlled test-only failure injection; both the application and reversal transactions rolled back cleanly when injected failures occurred.
 
-No scenario remains not executed. Do not infer prior-dues carry-forward from the credit blockers: E01-E04 verified that unpaid and partially paid balances remain on their original bills and are not duplicated on subsequent bills.
+The credit scenarios previously blocked or not executed are now verified. The complete stress suite has not been rerun since the credit implementation, so its last full count remains the pre-credit result above. Do not infer prior-dues carry-forward from the earlier credit blockers: E01-E04 verified that unpaid and partially paid balances remain on their original bills and are not duplicated on subsequent bills.
 
 ## Inspection findings and scope limitations
 
@@ -138,4 +152,4 @@ No scenario remains not executed. Do not infer prior-dues carry-forward from the
 - Concurrent bill-number allocation now uses a transaction-scoped advisory lock; I03 verifies unique numbers.
 - Student deletion is blocked when bills exist, with a database-level RESTRICT constraint as a second safeguard.
 
-This report does not certify the billing module as ready: four credit-related scenarios remain blocked, and production configuration and production-like recovery testing are outside this QA run.
+This report does not certify the billing module as ready: the complete stress suite must be rerun after credit implementation, and production configuration and production-like recovery testing are outside this QA run.

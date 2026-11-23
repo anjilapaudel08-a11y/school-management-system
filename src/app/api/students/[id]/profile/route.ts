@@ -226,11 +226,13 @@ export async function GET(
       );
 
       const creditApplied =
-        bill.creditApplications.reduce(
+        bill.creditApplications
+          .filter((application) => !application.reversedAt)
+          .reduce(
           (sum, application) =>
             sum + Number(application.amount),
           0
-        );
+          );
 
       const isVoidedWithoutSettlement =
         bill.status === "CANCELLED" &&

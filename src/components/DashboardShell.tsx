@@ -124,6 +124,11 @@ const navigationGroups: NavigationGroup[] = [
         icon: CreditCard,
       },
       {
+        label: "Student Credits",
+        href: "/dashboard/finance/credits",
+        icon: WalletCards,
+      },
+      {
         label: "School Expenses",
         href: "/dashboard/finance/expenses",
         icon: ReceiptText,
@@ -303,8 +308,17 @@ function SidebarContents({
         className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-5 pt-3"
       >
         {navigationGroups.map((group) => {
+          const visibleItems = group.items.filter(
+            (item) =>
+              item.href !== "/dashboard/finance/credits" ||
+              userRole === "ADMIN",
+          );
+          if (visibleItems.length === 0) {
+            return null;
+          }
+
           const isOpen = openGroups[group.label] ?? false;
-          const containsActiveItem = group.items.some((item) =>
+          const containsActiveItem = visibleItems.some((item) =>
             isNavigationItemActive(pathname, item.href),
           );
           return (
@@ -333,7 +347,7 @@ function SidebarContents({
             </button>
 
             {isOpen && <div className="space-y-1 pb-1">
-              {group.items.map((item) => {
+              {visibleItems.map((item) => {
                 const active = isNavigationItemActive(pathname, item.href);
 
                 const Icon = item.icon;

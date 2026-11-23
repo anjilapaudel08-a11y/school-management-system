@@ -268,6 +268,7 @@ export async function POST(request: Request) {
             tx.billCreditApplication.aggregate({
               where: {
                 billId: existingBill.id,
+                reversedAt: null,
               },
               _sum: {
                 amount: true,
@@ -346,6 +347,7 @@ export async function POST(request: Request) {
           await tx.billCreditApplication.findMany({
             where: {
               billId,
+              reversedAt: null,
             },
             select: {
               amount: true,

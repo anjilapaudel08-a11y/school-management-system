@@ -30,13 +30,16 @@ model School {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      UserRole @default(BOARD_MEMBER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                     String                  @id @default(cuid())
+  name                   String
+  email                  String                  @unique
+  password               String
+  role                   UserRole                @default(BOARD_MEMBER)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  issuedStudentCredits   StudentCredit[]         @relation("StudentCreditIssuer")
+  appliedBillCredits     BillCreditApplication[] @relation("BillCreditApplicationActor")
+  reversedBillCredits    BillCreditApplication[] @relation("BillCreditApplicationReverser")
 }
 
 model Infrastructure {
@@ -479,36 +482,55 @@ model StudentChargeApplication {
 }
 
 model StudentCredit {
-  id              String                  @id @default(cuid())
-  studentId       String
-  academicYearId  String
-  amount          Decimal
-  appliedAmount   Decimal                 @default(0)
-  source          String
-  notes           String?
-  sourcePaymentId String?                 @unique
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
-  applications    BillCreditApplication[]
-  academicYear    AcademicYear            @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-  sourcePayment   Payment?                @relation(fields: [sourcePaymentId], references: [id])
-  student         Student                 @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  id                       String                  @id @default(cuid())
+  studentId                String
+  academicYearId           String
+  amount                   Decimal
+  appliedAmount            Decimal                 @default(0)
+  source                   String
+  notes                    String?
+  sourcePaymentId          String?                 @unique
+  issueDate                DateTime?
+  reason                   String?
+  issuedByUserId           String?
+  issuanceIdempotencyKey   String?                 @unique
+  issuanceRequestHash      String?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  applications             BillCreditApplication[]
+  academicYear             AcademicYear            @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  issuedBy                 User?                   @relation("StudentCreditIssuer", fields: [issuedByUserId], references: [id], onDelete: Restrict)
+  sourcePayment            Payment?                @relation(fields: [sourcePaymentId], references: [id])
+  student                  Student                 @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@index([studentId])
   @@index([academicYearId])
+  @@index([issuedByUserId])
 }
 
 model BillCreditApplication {
-  id        String        @id @default(cuid())
-  billId    String
-  creditId  String
-  amount    Decimal
-  createdAt DateTime      @default(now())
-  bill      Bill          @relation(fields: [billId], references: [id], onDelete: Cascade)
-  credit    StudentCredit @relation(fields: [creditId], references: [id], onDelete: Cascade)
+  id                     String        @id @default(cuid())
+  billId                 String
+  creditId               String
+  amount                 Decimal
+  appliedByUserId        String?
+  idempotencyKey         String?       @unique
+  idempotencyRequestHash String?
+  reversedAt             DateTime?
+  reversedByUserId       String?
+  reversalReason         String?
+  createdAt              DateTime      @default(now())
+  appliedBy              User?         @relation("BillCreditApplicationActor", fields: [appliedByUserId], references: [id], onDelete: Restrict)
+  bill                   Bill          @relation(fields: [billId], references: [id], onDelete: Cascade)
+  credit                 StudentCredit @relation(fields: [creditId], references: [id], onDelete: Cascade)
+  reversedBy             User?         @relation("BillCreditApplicationReverser", fields: [reversedByUserId], references: [id], onDelete: Restrict)
 
   @@index([billId])
   @@index([creditId])
+  @@index([billId, reversedAt])
+  @@index([creditId, reversedAt])
+  @@index([appliedByUserId])
+  @@index([reversedByUserId])
 }
 
 model Payment {
