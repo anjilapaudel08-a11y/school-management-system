@@ -8,11 +8,12 @@ export function centsToAmount(cents) {
 
 export function calculateLine({ quantity, rate, discountPercent = 0 }) {
   const amountCents = roundCents(Number(quantity) * Number(rate));
+  const amount = centsToAmount(amountCents);
   const discountCents = roundCents(
-    (amountCents * Number(discountPercent)) / 100,
+    (amount * Number(discountPercent)) / 100,
   );
   return {
-    amount: centsToAmount(amountCents),
+    amount,
     discountAmount: centsToAmount(discountCents),
     netAmount: centsToAmount(amountCents - discountCents),
   };

@@ -685,6 +685,7 @@ export default function BillDetailPage({
                     onChange={(value) =>
                       setPaymentDate(value)
                     }
+                    valueFormat="BS"
                   />
                 </div>
               </div>

@@ -2,9 +2,11 @@ import {
   MARKER,
   SCHOOL_NAME,
   academicYearData,
+  nextAcademicYearData,
   classData,
   studentData,
   feeData,
+  nextYearFeeData,
   studentChargeData,
   discountData,
 } from "../fixtures/billing-test-data";
@@ -45,6 +47,25 @@ export async function setupTestData(prisma) {
     },
   });
 
+  const nextAcademicYear = await prisma.academicYear.upsert({
+    where: {
+      schoolId_name: {
+        schoolId: school.id,
+        name: nextAcademicYearData.name,
+      },
+    },
+    create: {
+      schoolId: school.id,
+      ...nextAcademicYearData,
+      isActive: false,
+    },
+    update: {
+      startDate: nextAcademicYearData.startDate,
+      endDate: nextAcademicYearData.endDate,
+      isActive: false,
+    },
+  });
+
   const terms = [];
   for (const [index, name] of ["Term 1", "Term 2", "Term 3", "Term 4"].entries()) {
     terms.push(
@@ -63,6 +84,23 @@ export async function setupTestData(prisma) {
         update: { name },
       }),
     );
+  }
+
+  for (const [index, name] of ["Term 1", "Term 2", "Term 3", "Term 4"].entries()) {
+    await prisma.academicTerm.upsert({
+      where: {
+        academicYearId_order: {
+          academicYearId: nextAcademicYear.id,
+          order: index + 1,
+        },
+      },
+      create: {
+        academicYearId: nextAcademicYear.id,
+        name,
+        order: index + 1,
+      },
+      update: { name },
+    });
   }
 
   const classes = {};
@@ -120,6 +158,25 @@ export async function setupTestData(prisma) {
         rollNumber: Number(item.key.slice(1)),
       },
     });
+
+    await prisma.enrollment.upsert({
+      where: {
+        studentId_academicYearId: {
+          studentId: students[item.key].id,
+          academicYearId: nextAcademicYear.id,
+        },
+      },
+      create: {
+        studentId: students[item.key].id,
+        academicYearId: nextAcademicYear.id,
+        classId: classes[item.classKey].id,
+        rollNumber: Number(item.key.slice(1)),
+      },
+      update: {
+        classId: classes[item.classKey].id,
+        rollNumber: Number(item.key.slice(1)),
+      },
+    });
   }
 
   const fees = {};
@@ -136,6 +193,35 @@ export async function setupTestData(prisma) {
       },
       create: {
         academicYearId: academicYear.id,
+        classId: classes[item.classKey].id,
+        feeType: item.feeType,
+        name: item.name,
+        frequency: item.frequency,
+        amount: item.amount,
+        isActive: true,
+      },
+      update: {
+        frequency: item.frequency,
+        amount: item.amount,
+        isActive: true,
+      },
+    });
+  }
+
+  const nextYearFees = {};
+  for (const item of nextYearFeeData) {
+    const key = `${item.classKey}:${item.feeType}`;
+    nextYearFees[key] = await prisma.feeStructure.upsert({
+      where: {
+        academicYearId_classId_feeType_name: {
+          academicYearId: nextAcademicYear.id,
+          classId: classes[item.classKey].id,
+          feeType: item.feeType,
+          name: item.name,
+        },
+      },
+      create: {
+        academicYearId: nextAcademicYear.id,
         classId: classes[item.classKey].id,
         feeType: item.feeType,
         name: item.name,
@@ -235,11 +321,35 @@ export async function setupTestData(prisma) {
     });
   }
 
+  const teacherEmail = `${MARKER.toLowerCase()}-teacher@example.test`;
+  const existingTeacher = await prisma.teacher.findFirst({
+    where: { schoolId: school.id, email: teacherEmail },
+    select: { id: true },
+  });
+  const teacher = existingTeacher
+    ? await prisma.teacher.update({
+        where: { id: existingTeacher.id },
+        data: { firstName: "QA", lastName: "Billing Teacher", basicSalary: 30000 },
+      })
+    : await prisma.teacher.create({
+        data: {
+          schoolId: school.id,
+          firstName: "QA",
+          lastName: "Billing Teacher",
+          email: teacherEmail,
+          basicSalary: 30000,
+        },
+      });
+
   return {
     marker: MARKER,
     schoolId: school.id,
     academicYearId: academicYear.id,
     academicYearName: academicYear.name,
+    nextAcademicYearId: nextAcademicYear.id,
+    nextAcademicYearName: nextAcademicYear.name,
+    academicYearIds: [academicYear.id, nextAcademicYear.id],
+    teacherId: teacher.id,
     classIds: Object.fromEntries(
       Object.entries(classes).map(([key, value]) => [key, value.id]),
     ),
@@ -248,6 +358,9 @@ export async function setupTestData(prisma) {
     ),
     feeIds: Object.fromEntries(
       Object.entries(fees).map(([key, value]) => [key, value.id]),
+    ),
+    nextYearFeeIds: Object.fromEntries(
+      Object.entries(nextYearFees).map(([key, value]) => [key, value.id]),
     ),
     chargeIds: Object.fromEntries(
       Object.entries(charges).map(([key, value]) => [key, value.id]),

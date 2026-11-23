@@ -9,6 +9,12 @@ export const academicYearData = {
   endDate: bsToDate(2083, 12, 30),
 };
 
+export const nextAcademicYearData = {
+  name: `${MARKER} Academic Year 2`,
+  startDate: bsToDate(2084, 1, 1),
+  endDate: bsToDate(2084, 12, 30),
+};
+
 export const classData = [
   { key: "grade5", name: "Grade 5", order: 5 },
   { key: "grade6", name: "Grade 6", order: 6 },
@@ -37,6 +43,13 @@ export const feeData = [
   { classKey: "grade6", feeType: "ADMISSION", name: "Admission", frequency: "ANNUAL", amount: 3500 },
   { classKey: "grade6", feeType: "COMPUTER_LAB", name: "Computer Lab", frequency: "MONTHLY", amount: 700 },
   { classKey: "grade6", feeType: "EXAM", name: "Exam", frequency: "TERM", amount: 1000 },
+];
+
+export const nextYearFeeData = [
+  { classKey: "grade5", feeType: "TUITION", name: "Tuition 2084", frequency: "MONTHLY", amount: 7200 },
+  { classKey: "grade5", feeType: "ADMISSION", name: "Admission 2084", frequency: "ANNUAL", amount: 3600 },
+  { classKey: "grade5", feeType: "COMPUTER_LAB", name: "Computer Lab 2084", frequency: "MONTHLY", amount: 800 },
+  { classKey: "grade5", feeType: "EXAM", name: "Exam 2084", frequency: "TERM", amount: 1000 },
 ];
 
 export const billingPeriods = {

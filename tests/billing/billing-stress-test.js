@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { bsToDate } from "../../src/lib/nepali-date";
+import { bsToDate, dateToBS } from "../../src/lib/nepali-date";
+import { recordTeacherSalaryPayment } from "../../src/lib/teacher-salary-payment";
 import {
   billingPeriods,
   discountData,
@@ -13,6 +14,7 @@ import { loadBillingApi, postJson } from "./helpers/api-client";
 import { cleanupTestBills } from "./helpers/cleanup-test-data";
 import { connectToTestDatabase, getVerifiedTestTarget } from "./helpers/database";
 import { loadBill, verifyBillSnapshot, verifySettlement } from "./helpers/database-verification";
+import { withInjectedTransactionFailure } from "./helpers/injected-transaction-failure";
 
 const results = [];
 const focusedTestIds = process.env.BILLING_QA_FOCUS
@@ -27,6 +29,7 @@ async function main() {
   const target = getVerifiedTestTarget();
   process.env.DATABASE_URL = target.connectionString;
   const prisma = await connectToTestDatabase();
+  let appPrisma;
   try {
     const fixturePath = resolve(
       process.cwd(),
@@ -41,8 +44,12 @@ async function main() {
     }
 
     const api = await loadBillingApi();
+    const discountApi = await import("../../src/app/api/student-discounts/route");
+    const feeApi = await import("../../src/app/api/fees/route");
+    const expenseApi = await import("../../src/app/api/expenses/route");
+    const teachersApi = await import("../../src/app/api/teachers/route");
     const appDatabase = await import("../../src/lib/prisma");
-    const appPrisma = appDatabase.prisma;
+    appPrisma = appDatabase.prisma;
     const student = (key) => fixture.studentIds[key];
     const period = (key) => billingPeriods[key];
     const makeBillBody = (studentKey, periodKey, suffix = "test") => ({
@@ -53,6 +60,18 @@ async function main() {
       periodEndYear: 2083,
       periodEndMonth: period(periodKey).endMonth,
       notes: `${MARKER} ${suffix}`,
+    });
+    const makeBillBodyForYear = (
+      studentKey,
+      academicYearId,
+      year,
+      periodKey,
+      suffix = "test",
+    ) => ({
+      ...makeBillBody(studentKey, periodKey, suffix),
+      academicYearId,
+      periodStartYear: year,
+      periodEndYear: year,
     });
 
     async function resetBills() {
@@ -82,6 +101,32 @@ async function main() {
       );
     }
 
+    async function createDiscount(body) {
+      return postJson(
+        discountApi.POST,
+        body,
+        "/api/student-discounts",
+      );
+    }
+
+    async function updateDiscount(body) {
+      const response = await discountApi.PUT(
+        new Request("http://billing-qa.local/api/student-discounts", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+      );
+      return {
+        status: response.status,
+        body: await response.json(),
+      };
+    }
+
+    async function createFee(body) {
+      return postJson(feeApi.POST, body, "/api/fees");
+    }
+
     async function run(id, name, expectedValue, action, severity = "MEDIUM") {
       if (focusedTestIds && !focusedTestIds.has(id)) return;
       await resetBills();
@@ -92,10 +137,9 @@ async function main() {
         console.log(`PASS ${id}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        const status =
-          id === "I05" && message.includes("Connection terminated unexpectedly")
-            ? "BLOCKED"
-            : "FAIL";
+        const status = message.includes("Connection terminated unexpectedly")
+          ? "BLOCKED"
+          : "FAIL";
         results.push({
           id,
           name,
@@ -107,7 +151,6 @@ async function main() {
         console.log(`${status} ${id}: ${message}`);
       } finally {
         await resetBills();
-        await appPrisma.$disconnect();
       }
     }
 
@@ -1025,40 +1068,757 @@ async function main() {
       return { billItems: persisted.items.length, payments: persisted.payments.length, billNumber: persisted.billNumber };
     });
 
+    await run("B06", "Multi-year billing, payment, and duplicate prevention", "Previous-year balance remains on its original bill; new-year fees and discount calculate independently", async () => {
+      const previousBill = await getCreatedBill(
+        await createBill("S001", "P1", "B06-previous"),
+      );
+      await createPayment(previousBill.id, 1000);
+
+      const discountResponse = await createDiscount({
+        studentId: student("S001"),
+        academicYearId: fixture.nextAcademicYearId,
+        name: `${MARKER} 2084 tuition discount`,
+        percentage: 10,
+        feeTypes: ["TUITION"],
+        startDate: bsToDate(2084, 1, 1).toISOString(),
+      });
+      assert.equal(discountResponse.status, 201, JSON.stringify(discountResponse.body));
+
+      try {
+        const nextYearResponse = await postJson(
+          api.createBill,
+          makeBillBodyForYear(
+            "S001",
+            fixture.nextAcademicYearId,
+            2084,
+            "P1",
+            "B06-new-year",
+          ),
+          "/api/bills",
+        );
+        const nextYearBill = await getCreatedBill(nextYearResponse);
+        assert.equal(Number(nextYearBill.totalAmount), 26440);
+        assert.equal(Number(nextYearBill.discountAmount), 2160);
+        assert.equal(
+          nextYearBill.items.some((item) => item.description.includes("2083")),
+          false,
+        );
+        await createPayment(nextYearBill.id, 1000);
+
+        const duplicate = await postJson(
+          api.createBill,
+          makeBillBodyForYear(
+            "S001",
+            fixture.nextAcademicYearId,
+            2084,
+            "P1",
+            "B06-duplicate",
+          ),
+          "/api/bills",
+        );
+        assert.equal(duplicate.status, 409);
+
+        const [previousStatement, currentStatement] = await Promise.all([
+          api.getStudentProfile(student("S001"), fixture.academicYearId),
+          api.getStudentProfile(student("S001"), fixture.nextAcademicYearId),
+        ]);
+        assert.equal(previousStatement.status, 200);
+        assert.equal(currentStatement.status, 200);
+        assert.equal(previousStatement.body.financial.summary.remainingDue, 20500);
+        assert.equal(previousStatement.body.financial.bills[0].remainingAmount, 20500);
+        assert.equal(currentStatement.body.financial.summary.remainingDue, 25440);
+        assert.equal(currentStatement.body.financial.summary.totalPaid, 1000);
+
+        return {
+          previousYearDue: previousStatement.body.financial.summary.remainingDue,
+          nextYearBill: Number(nextYearBill.totalAmount),
+          nextYearDiscount: Number(nextYearBill.discountAmount),
+          nextYearDue: currentStatement.body.financial.summary.remainingDue,
+          duplicateStatus: duplicate.status,
+        };
+      } finally {
+        await prisma.studentDiscount.delete({
+          where: { id: discountResponse.body.id },
+        });
+      }
+    }, "HIGH");
+
+    const discountFor = (studentKey, name, startDate, endDate = null, feeTypes = ["TUITION"], percentage = 10) => ({
+      studentId: student(studentKey),
+      academicYearId: fixture.academicYearId,
+      name: `${MARKER} ${name}`,
+      percentage,
+      feeTypes,
+      startDate: startDate.toISOString(),
+      ...(endDate ? { endDate: endDate.toISOString() } : {}),
+    });
+
+    await run("C01", "Discount begins before billing period", "Pre-period start remains eligible for all three monthly fee months", async () => {
+      const created = await createDiscount(
+        discountFor("S001", "C01", bsToDate(2082, 12, 1)),
+      );
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      try {
+        const bill = await getCreatedBill(await createBill("S001", "P1", "C01"));
+        const tuition = bill.items.find((item) => item.feeType === "TUITION");
+        assert.equal(Number(tuition.discountAmount), 1500);
+        assert.equal(Number(bill.discountAmount), 1500);
+        return { tuitionDiscount: Number(tuition.discountAmount) };
+      } finally {
+        await prisma.studentDiscount.delete({ where: { id: created.body.id } });
+      }
+    });
+
+    await run("C02", "Discount ends at billing-period boundary", "Inclusive end on the final billing day discounts all three monthly fee months", async () => {
+      const periodEnd = new Date(bsToDate(2083, 4, 1).getTime() - 1);
+      const created = await createDiscount(
+        discountFor("S001", "C02", bsToDate(2083, 1, 1), periodEnd),
+      );
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      try {
+        const bill = await getCreatedBill(await createBill("S001", "P1", "C02"));
+        const tuition = bill.items.find((item) => item.feeType === "TUITION");
+        assert.equal(Number(tuition.discountAmount), 1500);
+        return { periodEnd: periodEnd.toISOString(), tuitionDiscount: Number(tuition.discountAmount) };
+      } finally {
+        await prisma.studentDiscount.delete({ where: { id: created.body.id } });
+      }
+    });
+
+    await run("C03", "Discount begins after billing period", "No discount is applied before its start date", async () => {
+      const created = await createDiscount(
+        discountFor("S001", "C03", bsToDate(2083, 4, 1)),
+      );
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      try {
+        const bill = await getCreatedBill(await createBill("S001", "P1", "C03"));
+        const tuition = bill.items.find((item) => item.feeType === "TUITION");
+        assert.equal(Number(tuition.discountAmount), 0);
+        assert.equal(Number(bill.discountAmount), 0);
+        return { tuitionDiscount: Number(tuition.discountAmount) };
+      } finally {
+        await prisma.studentDiscount.delete({ where: { id: created.body.id } });
+      }
+    });
+
+    await run("C04", "Expired discount", "A discount ending before the billing period is excluded", async () => {
+      const created = await createDiscount(
+        discountFor(
+          "S001",
+          "C04",
+          bsToDate(2082, 12, 1),
+          new Date(bsToDate(2083, 1, 1).getTime() - 1),
+        ),
+      );
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      try {
+        const bill = await getCreatedBill(await createBill("S001", "P1", "C04"));
+        const tuition = bill.items.find((item) => item.feeType === "TUITION");
+        assert.equal(Number(tuition.discountAmount), 0);
+        return { tuitionDiscount: Number(tuition.discountAmount) };
+      } finally {
+        await prisma.studentDiscount.delete({ where: { id: created.body.id } });
+      }
+    });
+
+    await run("C05", "Partial-period monthly discount", "Only the one eligible month of three receives the 10% tuition discount", async () => {
+      const created = await createDiscount(
+        discountFor(
+          "S001",
+          "C05",
+          bsToDate(2083, 2, 1),
+          new Date(bsToDate(2083, 3, 1).getTime() - 1),
+        ),
+      );
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      try {
+        const bill = await getCreatedBill(await createBill("S001", "P1", "C05"));
+        const tuition = bill.items.find((item) => item.feeType === "TUITION");
+        assert.equal(Number(tuition.amount), 15000);
+        assert.equal(Number(tuition.discountAmount), 500);
+        assert.equal(Number(tuition.netAmount), 14500);
+        assert.ok(
+          bill.items
+            .filter((item) => item.studentChargeId)
+            .every((item) => Number(item.discountAmount) === 0),
+        );
+        return {
+          tuitionAmount: Number(tuition.amount),
+          tuitionDiscount: Number(tuition.discountAmount),
+          tuitionNet: Number(tuition.netAmount),
+        };
+      } finally {
+        await prisma.studentDiscount.delete({ where: { id: created.body.id } });
+      }
+    }, "HIGH");
+
+    await run("C06", "Overlapping and adjacent discounts", "Overlapping fee/date ranges return 409; a discount starting the following day is accepted", async () => {
+      const firstEnd = new Date(bsToDate(2083, 4, 1).getTime() - 1);
+      const first = await createDiscount(
+        discountFor("S001", "C06 first", bsToDate(2083, 1, 1), firstEnd),
+      );
+      assert.equal(first.status, 201, JSON.stringify(first.body));
+      try {
+        const overlap = await createDiscount(
+          discountFor("S001", "C06 overlap", firstEnd, bsToDate(2083, 5, 1)),
+        );
+        assert.equal(overlap.status, 409);
+
+        const adjacent = await createDiscount(
+          discountFor("S001", "C06 adjacent", bsToDate(2083, 4, 1)),
+        );
+        assert.equal(adjacent.status, 201, JSON.stringify(adjacent.body));
+        try {
+          const discountCount = await prisma.studentDiscount.count({
+            where: { studentId: student("S001"), academicYearId: fixture.academicYearId },
+          });
+          assert.equal(discountCount, 2);
+          return {
+            overlapStatus: overlap.status,
+            adjacentStatus: adjacent.status,
+            savedDiscounts: discountCount,
+          };
+        } finally {
+          await prisma.studentDiscount.delete({ where: { id: adjacent.body.id } });
+        }
+      } finally {
+        await prisma.studentDiscount.delete({ where: { id: first.body.id } });
+      }
+    });
+
+    await run("C07", "Discount edit preserves historical bill snapshot", "Existing bill keeps its 10% discount; next bill uses the edited 20% discount", async () => {
+      const discount = await createDiscount(
+        discountFor(
+          "S001",
+          "C07",
+          bsToDate(2083, 1, 1),
+          new Date(bsToDate(2083, 4, 1).getTime() - 1),
+        ),
+      );
+      assert.equal(discount.status, 201, JSON.stringify(discount.body));
+      try {
+        const first = await getCreatedBill(await createBill("S001", "P1", "C07-old"));
+        const updated = await updateDiscount({
+          id: discount.body.id,
+          name: `${MARKER} C07 updated`,
+          percentage: 20,
+          feeTypes: ["TUITION"],
+          startDate: bsToDate(2083, 4, 1).toISOString(),
+          endDate: null,
+          isActive: true,
+        });
+        assert.equal(updated.status, 200, JSON.stringify(updated.body));
+        const second = await getCreatedBill(await createBill("S001", "P2", "C07-new"));
+        const preserved = await loadBill(prisma, first.id);
+        assert.equal(Number(preserved.items.find((item) => item.feeType === "TUITION").discountAmount), 1500);
+        assert.equal(Number(second.items.find((item) => item.feeType === "TUITION").discountAmount), 3000);
+        return { oldDiscount: 1500, newDiscount: 3000 };
+      } finally {
+        await prisma.studentDiscount.delete({ where: { id: discount.body.id } });
+      }
+    });
+
+    await run("E01", "Unpaid prior bill remains on original bill", "New bill excludes prior unpaid balance; account statement retains both bill dues", async () => {
+      const oldBill = await getCreatedBill(await createBill("S001", "P1", "E01-old"));
+      const newBill = await getCreatedBill(await createBill("S001", "P2", "E01-new"));
+      const statement = await api.getStudentProfile(student("S001"), fixture.academicYearId);
+      assert.equal(statement.status, 200);
+      assert.equal(Number(oldBill.totalAmount), 21500);
+      assert.equal(Number(newBill.totalAmount), 17300);
+      assert.equal(statement.body.financial.summary.remainingDue, 38800);
+      assert.deepEqual(
+        statement.body.financial.bills.map((bill) => bill.remainingAmount).sort((a, b) => a - b),
+        [17300, 21500],
+      );
+      return {
+        previousBillDue: oldBill.totalAmount,
+        nextBillTotal: newBill.totalAmount,
+        statementDue: statement.body.financial.summary.remainingDue,
+      };
+    }, "HIGH");
+
+    await run("E02", "Partial prior bill remains on original bill", "Prior bill retains its Rs. 16,500 balance; new bill does not carry it forward", async () => {
+      const oldBill = await getCreatedBill(await createBill("S001", "P1", "E02-old"));
+      await createPayment(oldBill.id, 5000);
+      const newBill = await getCreatedBill(await createBill("S001", "P2", "E02-new"));
+      const statement = await api.getStudentProfile(student("S001"), fixture.academicYearId);
+      const oldStatementBill = statement.body.financial.bills.find((bill) => bill.id === oldBill.id);
+      assert.equal(Number(oldStatementBill.remainingAmount), 16500);
+      assert.equal(Number(newBill.totalAmount), 17300);
+      assert.equal(statement.body.financial.summary.remainingDue, 33800);
+      return {
+        priorBillDue: oldStatementBill.remainingAmount,
+        nextBillTotal: newBill.totalAmount,
+        statementDue: statement.body.financial.summary.remainingDue,
+      };
+    }, "HIGH");
+
+    await run("E03", "Multiple prior payments remain allocated to original bill", "Three payments reduce only the original bill; the subsequent bill contains no prior balance", async () => {
+      const oldBill = await getCreatedBill(await createBill("S001", "P1", "E03-old"));
+      for (const amount of [1000, 2500, 500]) {
+        await createPayment(oldBill.id, amount);
+      }
+      const newBill = await getCreatedBill(await createBill("S001", "P2", "E03-new"));
+      const statement = await api.getStudentProfile(student("S001"), fixture.academicYearId);
+      assert.equal(Number(newBill.totalAmount), 17300);
+      assert.equal(statement.body.financial.summary.totalPaid, 4000);
+      assert.equal(statement.body.financial.summary.remainingDue, 34800);
+      return {
+        paymentCount: statement.body.financial.payments.length,
+        paidAmount: statement.body.financial.summary.totalPaid,
+        nextBillTotal: newBill.totalAmount,
+        statementDue: statement.body.financial.summary.remainingDue,
+      };
+    }, "HIGH");
+
+    await run("E04", "Fully settled prior bill is not carried forward", "A paid prior bill has zero due; new bill contains only new-year charges", async () => {
+      const oldBill = await getCreatedBill(await createBill("S001", "P1", "E04-old"));
+      await createPayment(oldBill.id, Number(oldBill.totalAmount));
+      const newBill = await getCreatedBill(await createBill("S001", "P2", "E04-new"));
+      const statement = await api.getStudentProfile(student("S001"), fixture.academicYearId);
+      const oldStatementBill = statement.body.financial.bills.find((bill) => bill.id === oldBill.id);
+      assert.equal(Number(oldStatementBill.remainingAmount), 0);
+      assert.equal(Number(newBill.totalAmount), 17300);
+      assert.equal(Number(statement.body.financial.summary.remainingDue), 17300);
+      return {
+        oldStatus: oldStatementBill.status,
+        oldDue: oldStatementBill.remainingAmount,
+        nextBillTotal: newBill.totalAmount,
+        statementDue: statement.body.financial.summary.remainingDue,
+      };
+    }, "HIGH");
+
+    await run("F11-concurrent-waiver", "Concurrent payment and waiver cannot over-settle", "Only one settlement succeeds; total payment plus waiver stays within the bill balance", async () => {
+      const bill = await getCreatedBill(await createBill("S009", "P1", "F11-waiver"));
+      const responses = await Promise.all([
+        createPayment(bill.id, 8000, 7000, "Concurrent QA waiver"),
+        createPayment(bill.id, 8000, 7000, "Concurrent QA waiver"),
+      ]);
+      assert.deepEqual(
+        responses.map((response) => response.status).sort(),
+        [201, 400],
+      );
+      const persisted = await loadBill(prisma, bill.id);
+      const paid = persisted.payments.reduce(
+        (sum, payment) => sum + Number(payment.amount),
+        0,
+      );
+      const waived = persisted.payments.reduce(
+        (sum, payment) => sum + Number(payment.waiverAmount),
+        0,
+      );
+      assert.equal(paid + waived, 15000);
+      assert.equal(Number(persisted.totalAmount) - paid - waived, 6500);
+      assert.equal(persisted.status, "PARTIAL");
+      assert.equal(Number(persisted.paidAmount), paid);
+      return {
+        statuses: responses.map((response) => response.status),
+        paid,
+        waived,
+        remainingDue: Number(persisted.totalAmount) - paid - waived,
+      };
+    }, "CRITICAL");
+
+    await run("G01", "Decimal amounts and fractional discount rounding", "Rs. 0.15 fee rounds 50% discount to Rs. 0.08 and net to Rs. 0.07", async () => {
+      const feeId = fixture.feeIds["grade5:COMPUTER_LAB"];
+      const originalFee = await prisma.feeStructure.findUniqueOrThrow({ where: { id: feeId } });
+      const discount = await createDiscount(
+        discountFor("S001", "G01 decimal", bsToDate(2083, 1, 1), null, ["COMPUTER_LAB"], 50),
+      );
+      assert.equal(discount.status, 201, JSON.stringify(discount.body));
+      try {
+        await prisma.feeStructure.update({ where: { id: feeId }, data: { amount: 0.05 } });
+        const bill = await getCreatedBill(await createBill("S001", "P1", "G01"));
+        const lab = bill.items.find((item) => item.feeType === "COMPUTER_LAB");
+        assert.equal(Number(lab.amount), 0.15);
+        assert.equal(Number(lab.discountAmount), 0.08);
+        assert.equal(Number(lab.netAmount), 0.07);
+        assert.equal(Number(bill.totalAmount), 20000.07);
+        return {
+          amount: Number(lab.amount),
+          discount: Number(lab.discountAmount),
+          net: Number(lab.netAmount),
+          billTotal: Number(bill.totalAmount),
+        };
+      } finally {
+        await prisma.studentDiscount.delete({ where: { id: discount.body.id } });
+        await prisma.feeStructure.update({ where: { id: feeId }, data: { amount: originalFee.amount } });
+      }
+    });
+
+    await run("G02", "Smallest positive fee and rounding", "Rs. 0.03 fee rounds a 50% discount to Rs. 0.02 and preserves a Rs. 0.01 balance", async () => {
+      const feeId = fixture.feeIds["grade5:COMPUTER_LAB"];
+      const originalFee = await prisma.feeStructure.findUniqueOrThrow({ where: { id: feeId } });
+      const discount = await createDiscount(
+        discountFor("S001", "G02 small", bsToDate(2083, 1, 1), null, ["COMPUTER_LAB"], 50),
+      );
+      assert.equal(discount.status, 201, JSON.stringify(discount.body));
+      try {
+        await prisma.feeStructure.update({ where: { id: feeId }, data: { amount: 0.01 } });
+        const bill = await getCreatedBill(await createBill("S001", "P1", "G02"));
+        const lab = bill.items.find((item) => item.feeType === "COMPUTER_LAB");
+        assert.equal(Number(lab.amount), 0.03);
+        assert.equal(Number(lab.discountAmount), 0.02);
+        assert.equal(Number(lab.netAmount), 0.01);
+        assert.equal(Number(bill.totalAmount), 20000.01);
+        return { amount: Number(lab.amount), discount: Number(lab.discountAmount), net: Number(lab.netAmount) };
+      } finally {
+        await prisma.studentDiscount.delete({ where: { id: discount.body.id } });
+        await prisma.feeStructure.update({ where: { id: feeId }, data: { amount: originalFee.amount } });
+      }
+    });
+
+    await run("G03", "Large amount precision", "Large monthly fee, percentage discount, and bill total remain cent-accurate", async () => {
+      const feeId = fixture.feeIds["grade5:TUITION"];
+      const originalFee = await prisma.feeStructure.findUniqueOrThrow({ where: { id: feeId } });
+      const discount = await createDiscount(
+        discountFor("S001", "G03 large", bsToDate(2083, 1, 1), null, ["TUITION"], 10),
+      );
+      assert.equal(discount.status, 201, JSON.stringify(discount.body));
+      try {
+        await prisma.feeStructure.update({
+          where: { id: feeId },
+          data: { amount: 9999999999.99 },
+        });
+        const bill = await getCreatedBill(await createBill("S001", "P1", "G03"));
+        const tuition = bill.items.find((item) => item.feeType === "TUITION");
+        assert.equal(Number(tuition.amount), 29999999999.97);
+        assert.equal(Number(tuition.discountAmount), 3000000000);
+        assert.equal(Number(tuition.netAmount), 26999999999.97);
+        assert.equal(
+          Number(bill.totalAmount),
+          bill.items.reduce((sum, item) => sum + Number(item.netAmount), 0),
+        );
+        return {
+          tuitionAmount: Number(tuition.amount),
+          tuitionDiscount: Number(tuition.discountAmount),
+          tuitionNet: Number(tuition.netAmount),
+          billTotal: Number(bill.totalAmount),
+        };
+      } finally {
+        await prisma.studentDiscount.delete({ where: { id: discount.body.id } });
+        await prisma.feeStructure.update({ where: { id: feeId }, data: { amount: originalFee.amount } });
+      }
+    }, "HIGH");
+
+    await run("G04", "Zero, negative, and excessive amounts", "Zero-value bills and negative fees/payments are rejected; overpayment leaves balances unchanged", async () => {
+      const zeroFee = await createFee({
+        academicYearId: fixture.academicYearId,
+        classId: fixture.classIds.grade5,
+        feeType: "MISCELLANEOUS",
+        name: `${MARKER} zero fee`,
+        amount: 0,
+        frequency: "MONTHLY",
+      });
+      try {
+        assert.equal(zeroFee.status, 201, JSON.stringify(zeroFee.body));
+        const negativeFee = await createFee({
+          academicYearId: fixture.academicYearId,
+          classId: fixture.classIds.grade5,
+          feeType: "MISCELLANEOUS",
+          name: `${MARKER} negative fee`,
+          amount: -1,
+          frequency: "MONTHLY",
+        });
+        assert.equal(negativeFee.status, 400);
+
+        const bill = await getCreatedBill(await createBill("S009", "P1", "G04-overpay"));
+        const overpayment = await createPayment(bill.id, Number(bill.totalAmount) + 0.01);
+        assert.equal(overpayment.status, 400);
+        const afterOverpayment = await prisma.bill.findUniqueOrThrow({ where: { id: bill.id } });
+        assert.equal(Number(afterOverpayment.paidAmount), 0);
+
+        const fees = await prisma.feeStructure.findMany({
+          where: { academicYearId: fixture.academicYearId, classId: fixture.classIds.grade5 },
+          select: { id: true, isActive: true },
+        });
+        try {
+          await prisma.feeStructure.updateMany({
+            where: { id: { in: fees.map((fee) => fee.id) } },
+            data: { isActive: false },
+          });
+          const zeroBill = await postJson(
+            api.createBill,
+            makeBillBody("S010", "P1", "G04-zero"),
+            "/api/bills",
+          );
+          assert.equal(zeroBill.status, 409);
+          assert.match(zeroBill.body.error, /No billable fees/);
+
+          const negativePayment = await createPayment(bill.id, -0.01);
+          const zeroPayment = await createPayment(bill.id, 0);
+          assert.equal(negativePayment.status, 400);
+          assert.equal(zeroPayment.status, 400);
+          return {
+            zeroFeeStatus: zeroFee.status,
+            negativeFeeStatus: negativeFee.status,
+            zeroBillStatus: zeroBill.status,
+            negativePaymentStatus: negativePayment.status,
+            zeroPaymentStatus: zeroPayment.status,
+            overpaymentStatus: overpayment.status,
+            unchangedPaidAmount: Number(afterOverpayment.paidAmount),
+          };
+        } finally {
+          for (const fee of fees) {
+            await prisma.feeStructure.update({
+              where: { id: fee.id },
+              data: { isActive: fee.isActive },
+            });
+          }
+        }
+      } finally {
+        if (zeroFee.body.id) {
+          await prisma.feeStructure.delete({
+            where: { id: zeroFee.body.id },
+          });
+        }
+      }
+    }, "HIGH");
+
+    await run("TEA01", "Teacher list school scoping", "Teacher list contains only records from the configured school", async () => {
+      const school = await prisma.school.findFirst({
+        select: { id: true },
+      });
+      assert.ok(school, "Configured school was not found.");
+      const response = await teachersApi.GET();
+      assert.equal(response.status, 200);
+      const teachers = await response.json();
+      assert.ok(Array.isArray(teachers));
+      assert.ok(
+        teachers.every((teacher) => teacher.schoolId === school.id),
+        "Teacher list included records from another school.",
+      );
+      return { teacherCount: teachers.length, schoolScoped: true };
+    }, "HIGH");
+
+    await run("EXP01", "Expense form BS date contract", "Expense creation and editing preserve the selected Bikram Sambat date", async () => {
+      let expenseId;
+      const body = {
+        academicYearId: fixture.academicYearId,
+        category: "OTHER",
+        description: `${MARKER} BS-date expense`,
+        amount: 42.75,
+        expenseDate: "2083-08-07",
+        paymentMethod: "BANK",
+      };
+      try {
+        const created = await postJson(
+          expenseApi.POST,
+          body,
+          "/api/expenses",
+        );
+        assert.equal(created.status, 201, JSON.stringify(created.body));
+        expenseId = created.body.id;
+        assert.ok(expenseId, "Created expense did not return an ID.");
+
+        const updatedResponse = await expenseApi.PATCH(
+          new Request(
+            `http://billing-qa.local/api/expenses?id=${encodeURIComponent(expenseId)}`,
+            {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ ...body, amount: 44.75 }),
+            },
+          ),
+        );
+        const updated = await updatedResponse.json();
+        assert.equal(updatedResponse.status, 200, JSON.stringify(updated));
+
+        const persisted = await prisma.expense.findUniqueOrThrow({
+          where: { id: expenseId },
+        });
+        assert.equal(Number(persisted.amount), 44.75);
+        assert.deepEqual(dateToBS(persisted.expenseDate), {
+          year: 2083,
+          month: 8,
+          day: 7,
+        });
+        return {
+          status: updatedResponse.status,
+          amount: Number(persisted.amount),
+          expenseDateBS: dateToBS(persisted.expenseDate),
+        };
+      } finally {
+        if (expenseId) {
+          await prisma.expense.delete({ where: { id: expenseId } });
+        }
+      }
+    }, "HIGH");
+
+    await run("I01", "Bill generation transaction rollback", "Failure after bill, bill items, and charge applications are written leaves none persisted", async () => {
+      const { result, injected } = await withInjectedTransactionFailure(
+        appPrisma,
+        "studentChargeApplication",
+        "createMany",
+        () => createBill("S003", "P1", "I01-rollback"),
+      );
+      assert.equal(injected, true);
+      assert.equal(result.status, 500);
+      const bills = await prisma.bill.findMany({
+        where: { studentId: student("S003"), notes: `${MARKER} I01-rollback` },
+        select: { id: true },
+      });
+      const applications = await prisma.studentChargeApplication.count({
+        where: { studentChargeId: { in: Object.values(fixture.chargeIds).slice(0, 2) } },
+      });
+      assert.equal(bills.length, 0);
+      assert.equal(applications, 0);
+      return { injected, status: result.status, persistedBills: bills.length, activeApplications: applications };
+    }, "CRITICAL");
+
+    await run("I02", "Payment and balance-allocation rollback", "Failure after payment creation and bill update leaves neither payment nor balance change", async () => {
+      const bill = await getCreatedBill(await createBill("S001", "P1", "I02-rollback"));
+      const idempotencyKey = randomUUID();
+      const { result, injected } = await withInjectedTransactionFailure(
+        appPrisma,
+        "bill",
+        "update",
+        () =>
+          postJson(
+            api.recordPayment,
+            { billId: bill.id, amount: 100, method: "CASH" },
+            "/api/payments",
+            { "Idempotency-Key": idempotencyKey },
+          ),
+      );
+      assert.equal(injected, true);
+      assert.equal(result.status, 500);
+      const [payment, persistedBill] = await Promise.all([
+        prisma.payment.findUnique({ where: { idempotencyKey } }),
+        prisma.bill.findUniqueOrThrow({ where: { id: bill.id } }),
+      ]);
+      assert.equal(payment, null);
+      assert.equal(Number(persistedBill.paidAmount), 0);
+      assert.equal(persistedBill.status, "UNPAID");
+      return { injected, status: result.status, paymentPersisted: Boolean(payment), paidAmount: Number(persistedBill.paidAmount) };
+    }, "CRITICAL");
+
+    await run("I07", "Waiver transaction rollback", "Failure after waiver payment and bill update leaves neither the waiver nor status change", async () => {
+      const bill = await getCreatedBill(await createBill("S001", "P1", "I07-rollback"));
+      const idempotencyKey = randomUUID();
+      const { result, injected } = await withInjectedTransactionFailure(
+        appPrisma,
+        "bill",
+        "update",
+        () =>
+          postJson(
+            api.recordPayment,
+            {
+              billId: bill.id,
+              amount: 100,
+              waiverAmount: 100,
+              waiverReason: "Injected rollback test",
+              method: "CASH",
+            },
+            "/api/payments",
+            { "Idempotency-Key": idempotencyKey },
+          ),
+      );
+      assert.equal(injected, true);
+      assert.equal(result.status, 500);
+      const [payment, persistedBill] = await Promise.all([
+        prisma.payment.findUnique({ where: { idempotencyKey } }),
+        prisma.bill.findUniqueOrThrow({ where: { id: bill.id } }),
+      ]);
+      assert.equal(payment, null);
+      assert.equal(Number(persistedBill.paidAmount), 0);
+      assert.equal(persistedBill.status, "UNPAID");
+      return { injected, status: result.status, paymentPersisted: Boolean(payment), billStatus: persistedBill.status };
+    }, "CRITICAL");
+
+    await run("I08", "Salary payment transaction rollback", "Failure after salary-payment creation and salary update leaves the payment absent and salary pending", async () => {
+      const salary = await prisma.teacherSalary.create({
+        data: {
+          teacherId: fixture.teacherId,
+          academicYearId: fixture.academicYearId,
+          month: 1,
+          year: 2083,
+          salaryAmount: 1000,
+          netAmount: 1000,
+          status: "PENDING",
+        },
+      });
+      try {
+        const { result: failureObserved, injected } =
+          await withInjectedTransactionFailure(
+            appPrisma,
+            "teacherSalary",
+            "update",
+            async () => {
+              try {
+                await appPrisma.$transaction(
+                  (tx) =>
+                    recordTeacherSalaryPayment(tx, {
+                      teacherSalaryId: salary.id,
+                      amount: 250,
+                      paymentDate: bsToDate(2083, 1, 15),
+                      method: "CASH",
+                      reference: null,
+                      notes: "Injected rollback QA",
+                    }),
+                  { maxWait: 30_000, timeout: 30_000 },
+                );
+                return false;
+              } catch (error) {
+                if (
+                  !(error instanceof Error) ||
+                  error.message !== "BILLING_QA_INJECTED_FAILURE"
+                ) {
+                  throw error;
+                }
+                return true;
+              }
+            },
+          );
+        assert.equal(injected, true);
+        assert.equal(failureObserved, true);
+        const persisted = await prisma.teacherSalary.findUniqueOrThrow({
+          where: { id: salary.id },
+          include: { payments: true },
+        });
+        assert.equal(persisted.payments.length, 0);
+        assert.equal(persisted.status, "PENDING");
+        return { injected, paymentCount: persisted.payments.length, status: persisted.status };
+      } finally {
+        await prisma.teacherSalary.delete({ where: { id: salary.id } });
+      }
+    }, "CRITICAL");
+
+    await run("master", "Master bill, payment, waiver, and statement workflow", "Successful bill settlement is reflected consistently in payments and account statements; previous due remains on its original bill", async () => {
+      const firstBill = await getCreatedBill(await createBill("S009", "P1", "master-first"));
+      const payment = await createPayment(firstBill.id, 5000, 1000, "Master scenario waiver");
+      assert.equal(payment.status, 201, JSON.stringify(payment.body));
+      const secondBill = await getCreatedBill(await createBill("S009", "P2", "master-next"));
+      const statement = await api.getStudentProfile(student("S009"), fixture.academicYearId);
+      const firstStatementBill = statement.body.financial.bills.find((bill) => bill.id === firstBill.id);
+      assert.equal(firstStatementBill.remainingAmount, Number(firstBill.totalAmount) - 6000);
+      assert.equal(Number(secondBill.totalAmount), 17300);
+      assert.equal(
+        statement.body.financial.summary.remainingDue,
+        Number(firstBill.totalAmount) - 6000 + Number(secondBill.totalAmount),
+      );
+      assert.equal(statement.body.financial.payments.length, 1);
+      return {
+        firstBillDue: firstStatementBill.remainingAmount,
+        secondBillTotal: secondBill.totalAmount,
+        statementDue: statement.body.financial.summary.remainingDue,
+        paymentCount: statement.body.financial.payments.length,
+      };
+    }, "HIGH");
+
     for (const [id, name, reason] of focusedTestIds ? [] : [
-      ["B06", "Bills in different academic years", "The QA fixture contains one year; this scenario was not executed."],
-      ["C01", "Discount starts before period", "Date-overlap discount scenarios not yet implemented in the runner."],
-      ["C02", "Discount ends at period end", "Date-overlap discount scenarios not yet implemented in the runner."],
-      ["C03", "Discount starts after period", "Date-overlap discount scenarios not yet implemented in the runner."],
-      ["C04", "Expired discount", "Date-overlap discount scenarios not yet implemented in the runner."],
-      ["C05", "Partial-period discount", "Date-overlap discount scenarios not yet implemented in the runner."],
-      ["C06", "Overlapping discounts", "API rejects overlap; deterministic resolution and bill-item discount provenance are absent."],
-      ["C07", "Discount change after bill", "Historical snapshot mutation scenario not yet implemented."],
-      ["E01", "Previous unpaid bill carry-forward", "No previous-dues carry-forward behavior exists in bill generation."],
-      ["E02", "Previous partial bill settlement", "Credit application API absent; carry-forward rule is unspecified."],
-      ["E03", "Multiple prior payments", "Prior-dues carry-forward is absent."],
-      ["E04", "Fully settled old bill", "Prior-dues carry-forward is absent."],
-      ["E05", "Excess credit application rejected", "No credit application API exists."],
-      ["E06", "Partial credit application", "No credit application API exists."],
-      ["E07", "Duplicate credit application", "No credit application API exists."],
-      ["F11-concurrent-waiver", "Concurrent payment and waiver operations", "Not separately executed; F11 covers concurrent cash payments only."],
-      ["G01", "Decimal fee rounding", "Precision scenarios not yet implemented."],
-      ["G02", "Small fee amounts", "Precision scenarios not yet implemented; discount API excludes MISCELLANEOUS."],
-      ["G03", "Large fee amounts", "Precision scenarios not yet implemented."],
-      ["G04", "Zero-value bill", "Zero-value scenario not yet implemented."],
-      ["I01", "Bill transaction rollback", "No test failpoint exists for injecting a mid-transaction failure."],
-      ["I02", "Payment transaction rollback", "No test failpoint exists for injecting a mid-transaction failure."],
-      ["master", "Master end-to-end scenario", "Previous dues and credit application endpoints are unavailable."],
+      ["E05", "Excess credit application rejected", "BLOCKED: no API, service, or UI creates or applies StudentCredit; schema models alone do not provide executable business behavior."],
+      ["E06", "Partial credit application", "BLOCKED: no API, service, or UI creates or applies StudentCredit; schema models alone do not provide executable business behavior."],
+      ["E07", "Duplicate credit application", "BLOCKED: no API, service, or UI creates or applies StudentCredit; schema models alone do not provide executable business behavior."],
+      ["I09", "Credit application transaction rollback", "BLOCKED: no credit-application transaction exists to inject a failure into."],
     ]) {
       results.push({
         id,
         name,
         expected: "Scenario executed and independently verified",
         actual: reason,
-        status: id.startsWith("E") || id === "I01" || id === "I02" || id === "master"
-          ? "BLOCKED"
-          : "NOT EXECUTED",
-        severity: id.startsWith("E") || id === "I01" || id === "I02" || id === "master" ? "HIGH" : "MEDIUM",
+        status: "BLOCKED",
+        severity: "HIGH",
       });
     }
 
@@ -1165,7 +1925,10 @@ async function main() {
     );
     if (counts.FAIL > 0) process.exitCode = 1;
   } finally {
-    await prisma.$disconnect();
+    await Promise.all([
+      prisma.$disconnect(),
+      appPrisma?.$disconnect(),
+    ]);
   }
 }
 

@@ -3,7 +3,19 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   try {
+    const school = await prisma.school.findFirst();
+
+    if (!school) {
+      return NextResponse.json(
+        { error: "No school has been configured yet." },
+        { status: 404 }
+      );
+    }
+
     const teachers = await prisma.teacher.findMany({
+      where: {
+        schoolId: school.id,
+      },
       orderBy: [
         {
           firstName: "asc",

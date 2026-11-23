@@ -7,23 +7,32 @@ Fixture: BILL_QA_2083 (isolated school; existing school data was not used)
 
 | Metric | Result |
 |---|---:|
-| Total scenarios | 70 |
-| Passed | 47 |
+| Total scenarios | 75 |
+| Passed | 71 |
 | Failed | 0 |
-| Blocked | 10 |
-| Not executed | 13 |
+| Blocked | 4 |
+| Not executed | 0 |
 | Critical defects | 0 |
 | High-priority defects | 0 |
 
 ## Execution note
 
-The broad suite is supplemented by focused live-database retests of quantity-based charges, concurrent bill numbering, idempotent payment retries, and student deletion with billing history.
+Final counts include focused retests of every initial failure. The first full run had a transient database disconnect in D02 and test-harness failures in I02, I07, I08, and `master`. D02 passed on retry. The rollback injector was fixed to restore Prisma's bound `$transaction` method; I02, I07, I08, and `master` then passed focused retries. I08's direct service call now catches only the expected injected failure and allows a longer test-only transaction wait. These were test-harness/environment issues, not application billing defects.
 
-The runner emitted a `pg` deprecation warning about overlapping `client.query()` calls. Expected rejected-payment cases also logged server-side error stacks while returning the expected validation responses; their scenarios passed. Neither warning changed the pass/fail counts.
+The run emitted a `pg` overlapping-query deprecation warning. Expected rejected-payment cases also logged server-side error stacks while returning the expected validation responses; their scenarios passed.
 
-## Browser UI retest (2026-11-22)
+## Accountant browser retest (2026-11-22 to 2026-11-23)
 
-Using the Accountant browser session against the separate fictional QA school, the bill form generated `BILL-000001` for Aarav Sharma for Baisakh 2083. The displayed bill total was Rs. 11,700: tuition Rs. 8,000, annual admission Rs. 2,500, computer lab Rs. 400, and examination Rs. 800. The UI accepted a Rs. 1,000 partial payment and displayed Rs. 10,700 remaining; a second Rs. 10,700 payment changed the bill to `PAID`, showed two payment-history rows, and reduced the remaining balance to zero. This was an additional UI smoke test, not part of the 70 direct-handler scenarios. No billing calculation or application logic was changed.
+The existing fictional QA dataset was preserved; no reset, truncate, reseed, or migration was run.
+
+- Fee structure creation and editing succeeded. A duplicate submission showed the expected HTTP 409 validation error; temporary fee rows were removed.
+- A student charge was created and edited; its test record was deleted and its absence verified. A shared bulk BUS charge was submitted for one student (`1 charges saved`), appeared in the student-charge workflow, and was removed afterward.
+- An individual discount was edited from 12.5% to 15%; a one-student bulk discount also succeeded. Both temporary discounts were removed; the two pre-existing fictional discounts remain.
+- The Accountant generated bill `BILL-000005` for Aarav, recorded partial payments, a waiver, and a final payment, and verified the zero balance, payment history, and student-profile financial summary. An unpaid Sita bill was cancelled and regenerated as `BILL-000009`; a partial payment was recorded on the replacement.
+- Salary records and partial/full salary payments were submitted through the UI. The teacher selector no longer includes a teacher from another school. The bill and salary date pickers now use BS values. One salary payment recorded before that picker fix has a wrong historical date; it was not altered, and requires an authorized reversal/correction decision.
+- Expense create/edit succeeded after fixing the form to submit its BS date unchanged; the temporary expense was removed. UI overpayment validation prevented submission. The bulk adjustment and billing forms displayed their successful/error outcomes.
+
+These are browser workflow checks against the fictional QA school, not production tests.
 
 ## Individual scenario report
 
@@ -36,23 +45,23 @@ Using the Accountant browser session against the separate fictional QA school, t
 | A05 | Student-specific BUS and MISC charges | Rs. 26,700 | {"total":26700} | PASS |
 | A06 | Discounts exclude student-specific charges | Rs. 24,900 | {"total":24900,"discount":1800} | PASS |
 | A07 | Quantity-based BUS charge | Rs. 26,300 | {"total":26300,"bus":[{"quantity":6,"rate":800,"amount":4800}]} | PASS |
-| A08 | Student charge isolation | S001 has no S003 charges | {"studentId":"cmws37gop0008q4w4qc0k6fdt","studentChargeItems":0} | PASS |
+| A08 | Student charge isolation | S001 has no S003 charges | {"studentId":"cmws50vb8000duww4ulx51qud","studentChargeItems":0} | PASS |
 | A09 | Grade-specific fees | Rs. 24,600 | {"total":24600,"feeTypes":["TUITION","ADMISSION","COMPUTER_LAB","EXAM"]} | PASS |
-| SC01 | Student-charge frequency amounts | All student-charge frequencies use rate multiplied by their calculated quantity | {"chargeItems":[{"studentId":"cmws37hrn000cq4w40f1jlhry","description":"BUS Monthly","quantity":3,"amount":4500},{"studentId":"cmws37hrn000cq4w40f1jlhry","description":"Student Misc One-Time","quantity":1,"amount":700},{"studentId":"cmws37ies000eq4w4tgme5gpy","description":"BUS Monthly","quantity":3,"amount":3000},{"studentId":"cmws37ies000eq4w4tgme5gpy","description":"BUS Term Quantity Two","quantity":2,"amount":800},{"studentId":"cmws37j16000gq4w4rlzxuxrp","description":"BUS Monthly","quantity":3,"amount":3600},{"studentId":"cmws37j16000gq4w4rlzxuxrp","description":"BUS Annual Quantity Three","quantity":3,"amount":600}]} | PASS |
+| SC01 | Student-charge frequency amounts | All student-charge frequencies use rate multiplied by their calculated quantity | {"chargeItems":[{"studentId":"cmws50wtz000juww4yv2q3ai3","description":"BUS Monthly","quantity":3,"amount":4500},{"studentId":"cmws50wtz000juww4yv2q3ai3","description":"Student Misc One-Time","quantity":1,"amount":700},{"studentId":"cmws50xj8000muww4nfllu6xd","description":"BUS Monthly","quantity":3,"amount":3000},{"studentId":"cmws50xj8000muww4nfllu6xd","description":"BUS Term Quantity Two","quantity":2,"amount":800},{"studentId":"cmws50yh1000puww4crzi3mc1","description":"BUS Annual Quantity Three","quantity":3,"amount":600},{"studentId":"cmws50yh1000puww4crzi3mc1","description":"BUS Monthly","quantity":3,"amount":3600}]} | PASS |
 | SC02 | Unpaid first bill does not repeat charges | Unpaid first bill retains its charges; later bill adds neither duplicate charges nor old balances | {"firstBill":{"status":"UNPAID","total":26700,"studentChargeItems":2},"secondBill":{"total":17300,"studentChargeItems":0},"statement":{"originalBillDue":26700,"subsequentBillDue":17300,"totalDue":44000}} | PASS |
 | SC03 | Partial first bill does not repeat charges | Partial settlement stays on the original bill; later bill has no duplicate charge or balance | {"firstBill":{"status":"PARTIAL","outstanding":26600},"secondBill":{"total":17300,"studentChargeItems":0},"statement":{"originalBillDue":26600,"subsequentBillDue":17300,"totalDue":43900}} | PASS |
 | SC04 | Charge remains eligible until active dates | A charge outside one period remains available to the next eligible period | {"earlyBillChargeItems":0,"eligibleBillCharge":{"quantity":1,"amount":1200}} | PASS |
 | SC05 | Unpaid cancelled bill releases its charge | Cancelled bill remains for audit and charge appears once on its replacement | {"cancelledBill":{"status":"CANCELLED","studentChargeItems":2},"replacementBill":{"status":"UNPAID","studentChargeItems":2},"activeApplications":2,"releasedApplications":2,"statement":{"cancelledBillDue":0,"replacementBillDue":26700,"totalDue":26700}} | PASS |
 | SC06 | Settled bill cannot release its charge | Cancellation requires reversal or credit handling before rebilling | {"cancellationStatus":409,"originalStatus":"PARTIAL","activeApplications":2,"nextBillStudentChargeItems":0} | PASS |
 | SC07 | Concurrent bills apply each charge once | Concurrent non-overlapping bills create one application per student charge | {"billStatuses":[201,201],"chargeItemsAcrossBills":2,"activeApplications":2} | PASS |
-| B01 | Consecutive non-overlapping periods | Both bills succeed | {"bills":["BILL-000002","BILL-000003"],"secondTotal":17300} | PASS |
+| B01 | Consecutive non-overlapping periods | Both bills succeed | {"bills":["BILL-000010","BILL-000011"],"secondTotal":17300} | PASS |
 | B02 | Partial billing overlap | Second bill rejected with 409 | {"secondStatus":409,"error":"This billing period overlaps with an existing bill for this student."} | PASS |
 | B03 | Contained billing overlap | Second bill rejected with 409 | {"secondStatus":409,"error":"This billing period overlaps with an existing bill for this student."} | PASS |
 | B04 | Exact duplicate period | Second bill rejected with 409 | {"secondStatus":409} | PASS |
 | B08 | Invalid bill inputs | All invalid requests rejected | {"rejectedStatuses":[400,400,400,400,404,400]} | PASS |
 | B09 | Concurrent identical bill requests | Exactly one bill is created | {"statuses":[201,409],"persistedBills":1} | PASS |
 | D01 | Annual class fee billed once | Admission fee appears only in the first eligible bill | [{"period":"P1","admissionCount":1},{"period":"P2","admissionCount":0},{"period":"P3","admissionCount":0},{"period":"P4","admissionCount":0}] | PASS |
-| D02 | Term fee schedule | One exam fee in each configured term | [{"period":"P1","examCount":1},{"period":"P2","examCount":1},{"period":"P3","examCount":1},{"period":"P4","examCount":1}] | PASS |
+| D02 | Term fee schedule | One exam fee in each configured term | [{"period":"P1","examCount":1},{"period":"P2","examCount":1},{"period":"P3","examCount":1},{"period":"P4","examCount":1}] (focused retry after transient disconnect) | PASS |
 | D03 | Class one-time fee | Class miscellaneous appears once in the academic year | [{"period":"P1","oneTimeCount":1},{"period":"P2","oneTimeCount":0},{"period":"P3","oneTimeCount":0},{"period":"P4","oneTimeCount":0}] | PASS |
 | D04 | One-time student charge start date | Charge first appears in its first eligible period only | [{"period":"P1","count":0},{"period":"P2","count":0},{"period":"P3","count":1},{"period":"P4","count":0}] | PASS |
 | D05 | Two-month inclusive billing period | Tuition Rs. 10,000; lab Rs. 1,000 | {"tuition":10000,"lab":1000,"total":19600} | PASS |
@@ -73,36 +82,48 @@ Using the Accountant browser session against the separate fictional QA school, t
 | H03 | Student charge edits and deletion preserve historical bill items | Changing or deleting a source charge leaves its original bill-item snapshot unchanged | {"unchangedBillItemSnapshots":2,"activeApplications":2,"deletedChargeStatus":200} | PASS |
 | H04 | Class change preserves historical fees | Old Grade 5 bill retained; next bill uses Grade 6 fees | {"oldRate":5000,"newRate":6000} | PASS |
 | H05 | Missing enrollment rejected | Existing student without selected-year enrollment is rejected | {"status":400,"error":"Student is not enrolled in the selected academic year."} | PASS |
-| I03 | Concurrent unique bill numbers | All concurrently created bill numbers are unique | {"statuses":[201,201],"billNumbers":["BILL-000002","BILL-000003"]} | PASS |
+| I03 | Concurrent unique bill numbers | All concurrently created bill numbers are unique | {"statuses":[201,201],"billNumbers":["BILL-000010","BILL-000011"]} | PASS |
 | I05 | Financial history after student deletion | Historical bills must not be silently deleted | {"deleteStatus":409,"billRetained":true} | PASS |
-| I06 | Database relationship integrity | All bill items and payments reference valid parents | {"billItems":5,"payments":1,"billNumber":"BILL-000002"} | PASS |
-| B06 | Bills in different academic years | Scenario executed and independently verified | "The QA fixture contains one year; this scenario was not executed." | NOT EXECUTED |
-| C01 | Discount starts before period | Scenario executed and independently verified | "Date-overlap discount scenarios not yet implemented in the runner." | NOT EXECUTED |
-| C02 | Discount ends at period end | Scenario executed and independently verified | "Date-overlap discount scenarios not yet implemented in the runner." | NOT EXECUTED |
-| C03 | Discount starts after period | Scenario executed and independently verified | "Date-overlap discount scenarios not yet implemented in the runner." | NOT EXECUTED |
-| C04 | Expired discount | Scenario executed and independently verified | "Date-overlap discount scenarios not yet implemented in the runner." | NOT EXECUTED |
-| C05 | Partial-period discount | Scenario executed and independently verified | "Date-overlap discount scenarios not yet implemented in the runner." | NOT EXECUTED |
-| C06 | Overlapping discounts | Scenario executed and independently verified | "API rejects overlap; deterministic resolution and bill-item discount provenance are absent." | NOT EXECUTED |
-| C07 | Discount change after bill | Scenario executed and independently verified | "Historical snapshot mutation scenario not yet implemented." | NOT EXECUTED |
-| E01 | Previous unpaid bill carry-forward | Scenario executed and independently verified | "No previous-dues carry-forward behavior exists in bill generation." | BLOCKED |
-| E02 | Previous partial bill settlement | Scenario executed and independently verified | "Credit application API absent; carry-forward rule is unspecified." | BLOCKED |
-| E03 | Multiple prior payments | Scenario executed and independently verified | "Prior-dues carry-forward is absent." | BLOCKED |
-| E04 | Fully settled old bill | Scenario executed and independently verified | "Prior-dues carry-forward is absent." | BLOCKED |
-| E05 | Excess credit application rejected | Scenario executed and independently verified | "No credit application API exists." | BLOCKED |
-| E06 | Partial credit application | Scenario executed and independently verified | "No credit application API exists." | BLOCKED |
-| E07 | Duplicate credit application | Scenario executed and independently verified | "No credit application API exists." | BLOCKED |
-| F11-concurrent-waiver | Concurrent payment and waiver operations | Scenario executed and independently verified | "Not separately executed; F11 covers concurrent cash payments only." | NOT EXECUTED |
-| G01 | Decimal fee rounding | Scenario executed and independently verified | "Precision scenarios not yet implemented." | NOT EXECUTED |
-| G02 | Small fee amounts | Scenario executed and independently verified | "Precision scenarios not yet implemented; discount API excludes MISCELLANEOUS." | NOT EXECUTED |
-| G03 | Large fee amounts | Scenario executed and independently verified | "Precision scenarios not yet implemented." | NOT EXECUTED |
-| G04 | Zero-value bill | Scenario executed and independently verified | "Zero-value scenario not yet implemented." | NOT EXECUTED |
-| I01 | Bill transaction rollback | Scenario executed and independently verified | "No test failpoint exists for injecting a mid-transaction failure." | BLOCKED |
-| I02 | Payment transaction rollback | Scenario executed and independently verified | "No test failpoint exists for injecting a mid-transaction failure." | BLOCKED |
-| master | Master end-to-end scenario | Scenario executed and independently verified | "Previous dues and credit application endpoints are unavailable." | BLOCKED |
+| I06 | Database relationship integrity | All bill items and payments reference valid parents | {"billItems":5,"payments":1,"billNumber":"BILL-000010"} | PASS |
+| B06 | Multi-year billing, payment, and duplicate prevention | Previous-year balance remains on its original bill; new-year fees and discount calculate independently | {"previousYearDue":20500,"nextYearBill":26440,"nextYearDiscount":2160,"nextYearDue":25440,"duplicateStatus":409} | PASS |
+| C01 | Discount begins before billing period | Pre-period start remains eligible for all three monthly fee months | {"tuitionDiscount":1500} | PASS |
+| C02 | Discount ends at billing-period boundary | Inclusive end on the final billing day discounts all three monthly fee months | {"periodEnd":"2026-07-16T18:14:59.999Z","tuitionDiscount":1500} | PASS |
+| C03 | Discount begins after billing period | No discount is applied before its start date | {"tuitionDiscount":0} | PASS |
+| C04 | Expired discount | A discount ending before the billing period is excluded | {"tuitionDiscount":0} | PASS |
+| C05 | Partial-period monthly discount | Only the one eligible month of three receives the 10% tuition discount | {"tuitionAmount":15000,"tuitionDiscount":500,"tuitionNet":14500} | PASS |
+| C06 | Overlapping and adjacent discounts | Overlapping fee/date ranges return 409; a discount starting the following day is accepted | {"overlapStatus":409,"adjacentStatus":201,"savedDiscounts":2} | PASS |
+| C07 | Discount edit preserves historical bill snapshot | Existing bill keeps its 10% discount; next bill uses the edited 20% discount | {"oldDiscount":1500,"newDiscount":3000} | PASS |
+| E01 | Unpaid prior bill remains on original bill | New bill excludes prior unpaid balance; account statement retains both bill dues | {"previousBillDue":"21500","nextBillTotal":"17300","statementDue":38800} | PASS |
+| E02 | Partial prior bill remains on original bill | Prior bill retains its Rs. 16,500 balance; new bill does not carry it forward | {"priorBillDue":16500,"nextBillTotal":"17300","statementDue":33800} | PASS |
+| E03 | Multiple prior payments remain allocated to original bill | Three payments reduce only the original bill; the subsequent bill contains no prior balance | {"paymentCount":3,"paidAmount":4000,"nextBillTotal":"17300","statementDue":34800} | PASS |
+| E04 | Fully settled prior bill is not carried forward | A paid prior bill has zero due; new bill contains only new-year charges | {"oldStatus":"PAID","oldDue":0,"nextBillTotal":"17300","statementDue":17300} | PASS |
+| F11-concurrent-waiver | Concurrent payment and waiver cannot over-settle | Only one settlement succeeds; total payment plus waiver stays within the bill balance | {"statuses":[201,400],"paid":8000,"waived":7000,"remainingDue":6500} | PASS |
+| G01 | Decimal amounts and fractional discount rounding | Rs. 0.15 fee rounds 50% discount to Rs. 0.08 and net to Rs. 0.07 | {"amount":0.15,"discount":0.08,"net":0.07,"billTotal":20000.07} | PASS |
+| G02 | Smallest positive fee and rounding | Rs. 0.03 fee rounds a 50% discount to Rs. 0.02 and preserves a Rs. 0.01 balance | {"amount":0.03,"discount":0.02,"net":0.01} | PASS |
+| G03 | Large amount precision | Large monthly fee, percentage discount, and bill total remain cent-accurate | {"tuitionAmount":29999999999.97,"tuitionDiscount":3000000000,"tuitionNet":26999999999.97,"billTotal":27000006499.97} | PASS |
+| G04 | Zero, negative, and excessive amounts | Zero-value bills and negative fees/payments are rejected; overpayment leaves balances unchanged | {"zeroFeeStatus":201,"negativeFeeStatus":400,"zeroBillStatus":409,"negativePaymentStatus":400,"zeroPaymentStatus":400,"overpaymentStatus":400,"unchangedPaidAmount":0} | PASS |
+| TEA01 | Teacher list school scoping | Teacher list contains only records from the configured school | {"teacherCount":5,"schoolScoped":true} | PASS |
+| EXP01 | Expense form BS date contract | Expense creation and editing preserve the selected Bikram Sambat date | {"status":200,"amount":44.75,"expenseDateBS":{"year":2083,"month":8,"day":7}} | PASS |
+| I01 | Bill generation transaction rollback | Failure after bill, bill items, and charge applications are written leaves none persisted | {"injected":true,"status":500,"persistedBills":0,"activeApplications":0} | PASS |
+| I02 | Payment and balance-allocation rollback | Failure after payment creation and bill update leaves neither payment nor balance change | Focused retry passed; payment absent, paid amount 0, bill remains UNPAID | PASS |
+| I07 | Waiver transaction rollback | Failure after waiver payment and bill update leaves neither the waiver nor status change | Focused retry passed; payment absent, paid amount 0, bill remains UNPAID | PASS |
+| I08 | Salary payment transaction rollback | Failure after salary-payment creation and salary update leaves the payment absent and salary pending | Focused retry passed; no salary payment persisted and salary remains PENDING | PASS |
+| master | Master bill, payment, waiver, and statement workflow | Successful bill settlement is reflected consistently in payments and account statements; previous due remains on its original bill | Focused retry passed; payment, waiver, original-bill due, next bill, and statement totals matched | PASS |
+| E05 | Excess credit application rejected | Reject an application that exceeds available credit | No credit application API, service, or UI exists | BLOCKED |
+| E06 | Partial credit application | Apply only the requested portion and retain the unused credit | No credit application API, service, or UI exists | BLOCKED |
+| E07 | Duplicate credit application | Prevent applying the same credit twice | No credit application API, service, or UI exists | BLOCKED |
+| I09 | Credit application transaction rollback | Inject a failure inside credit application and verify rollback | No credit application transaction exists | BLOCKED |
 
 ## Defect report
 
-No failures among executed scenarios.
+No application billing defects were reproduced. The five initial failures were traced to one transient test-database disconnect and defects in the test-only transaction-failure injector/assertion; focused reruns passed after the test harness was corrected.
+
+## Remaining blocked scenarios
+
+- **E05-E07 — credit amount validation, partial application, and duplicate prevention:** `StudentCredit` and `BillCreditApplication` Prisma models exist, but there is no credit creation/application API, service, or UI. These behaviors cannot be exercised safely until that feature exists.
+- **I09 — credit-application rollback:** blocked for the same reason; there is no credit-application transaction into which a controlled failure can be injected.
+
+No scenario remains not executed. Do not infer prior-dues carry-forward from the credit blockers: E01-E04 verified that unpaid and partially paid balances remain on their original bills and are not duplicated on subsequent bills.
 
 ## Inspection findings and scope limitations
 
@@ -117,4 +138,4 @@ No failures among executed scenarios.
 - Concurrent bill-number allocation now uses a transaction-scoped advisory lock; I03 verifies unique numbers.
 - Student deletion is blocked when bills exist, with a database-level RESTRICT constraint as a second safeguard.
 
-This report does not certify the billing module as fully tested; blocked and unexecuted scenarios remain.
+This report does not certify the billing module as ready: four credit-related scenarios remain blocked, and production configuration and production-like recovery testing are outside this QA run.

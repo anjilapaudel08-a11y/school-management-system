@@ -1,9 +1,27 @@
 # Deployment Readiness Report
 
-**Assessment date:** 2026-11-22  
-**Decision:** **Not ready for school deployment yet.** The user-confirmed isolated QA database was used for focused end-to-end checks; production configuration, recovery rehearsal, and remaining billing coverage are still unverified.
+**Assessment date:** 2026-11-23
+**Decision:** **Not ready for school deployment yet.** The isolated QA checks found no reproducible application billing defect, but four credit scenarios remain blocked; production configuration and a production-like recovery rehearsal are still unverified.
 
-## Post-reset QA follow-up (2026-11-22)
+## Remaining billing and finance QA follow-up (2026-11-23)
+
+The existing fictional QA dataset was preserved. No database reset, truncate, reseed, schema change, or migration was performed. No production system or credentials were used.
+
+| Focus | Latest finding |
+|---|---|
+| Billing suite | **71 PASS, 0 FAIL, 4 BLOCKED, 0 NOT EXECUTED** after focused retries. The first run exposed one transient QA-database disconnect and test-only transaction-injector bugs; all five initial failures passed on focused retries after the test harness was corrected. |
+| Prior dues and multi-year billing | **Pass.** E01-E04 verified unpaid, partial, multiple-payment, and fully settled prior bills remain on their original bills; later bills do not duplicate prior balances. B06 verified separate prior/new academic-year balances and duplicate prevention. |
+| Discounts and amounts | **Pass.** All seven date/overlap cases, BUS/MISC discount exclusion, fractional rounding, small/large values, zero/negative inputs, and excessive payment checks ran. |
+| Transaction rollback | **Pass.** Test-only injected failures rolled back bill generation (I01), payment/balance update (I02), waiver processing (I07), and salary payment (I08). The failure injector is not present in production code. |
+| Credits | **Blocked (4).** `StudentCredit` and `BillCreditApplication` models exist, but no credit creation/application API, service, or UI exists; I09 credit-application rollback is likewise unavailable. |
+| Browser finance workflows | **Tested/partial.** Fee structure create/edit and duplicate validation; student charge create/edit/delete; individual and bulk discount submission; bulk BUS-charge submission; bill generation, detail, unpaid cancellation/regeneration, partial/full payments, waiver, payment history, and student statement; salary creation/payments; expense create/edit; and UI overpayment validation were exercised. |
+| Browser-discovered fixes | The teacher selector is now scoped to the configured school. Bill/salary date pickers now use BS values, and expenses submit their BS date directly. Focused regression tests cover teacher scoping and expense BS-date persistence. No billing calculation logic was changed. |
+| QA ledger note | A salary payment entered before the date-picker correction has an incorrect historical date. It was not altered; use an authorized reversal/correction decision rather than silently changing ledger history. UI-generated bills and payments remain in the fictional QA dataset. |
+| Final validation | See the validation table below; lint, TypeScript, billing unit tests, and Prisma validation have passed. |
+
+The billing report contains per-scenario results and exact remaining blockers: [BILLING-QA-REPORT.md](./tests/billing/BILLING-QA-REPORT.md).
+
+## Post-reset QA baseline (2026-11-22; billing status superseded by the follow-up above)
 
 The user authorized a destructive reset of the confirmed test-only Neon database and a new fictional dataset. The guarded reset ran against that QA target only, preserved all 15 applied migrations and the database schema, and did not run a migration. This replaces the earlier QA dataset; the pre-reset counts and historical-data findings below are retained as an audit trail, not as statements about current QA records or production data.
 
@@ -16,10 +34,10 @@ The new dataset has 30 seeded students, 5 teachers, 12 classes, 5 subjects, and 
 | Marks and publication | **Pass in browser UI.** The incomplete-publication guard rejected missing marks; saving 50 and explicit 0 for the two students then allowed publication. Four Grade 5 term exams and one Grade 8 exam were also published and locked from the UI. |
 | Grades, boundaries, GPA, and position | **Pass in browser UI.** The Grade 5 result table showed all eight grades and all 16 configured percentage test values, including each lower/upper threshold pair. GPA and class positions rendered; Grade 8 results also showed 1st/2nd positions and the expected 3.44/3.36 GPAs. |
 | Report cards and print | **Pass in browser UI.** Generated a Grade 5 report card and opened a Grade 8 report card; both displayed subject marks, grades, GPA, and position. Print media hid the print control while retaining the marksheet. |
-| Billing UI | **Partial pass.** Generated a Baisakh 2083 bill for a fictional student (Rs. 11,700), posted Rs. 1,000 then Rs. 10,700 through the UI, and verified PARTIAL then PAID status, two payment-history rows, and zero remaining. Other billing forms and scenarios remain partial or untested. |
+| Billing UI | **Extended by the follow-up above.** This baseline exercise generated a Baisakh 2083 bill for a fictional student (Rs. 11,700), posted Rs. 1,000 then Rs. 10,700 through the UI, and verified PARTIAL then PAID status, two payment-history rows, and zero remaining. |
 | Historic published exams | **Pre-reset QA snapshot only.** The prior inspection found no unassigned scale among 48 published QA exams. Those records were removed by the authorized QA reset; the six new QA exams are published with the approved scale. No production historic exams were examined. The previous Grade 5 missing-mark and legacy-scale observations apply only to that prior QA snapshot. |
 | Validation | **Pass.** ESLint (no warnings), TypeScript, 9 focused grading unit tests, 2 QA integration tests, Prisma validation, 15-migration status, and production build. |
-| Billing suite | **47 pass, 0 fail, 10 blocked, 13 not executed.** An informational `pg` overlapping-query deprecation warning appeared. See [the billing QA report](./tests/billing/BILLING-QA-REPORT.md). |
+| Billing suite | **Latest follow-up: 71 pass, 0 fail, 4 blocked, 0 not executed.** The 47/0/10/13 result was the earlier baseline. See [the billing QA report](./tests/billing/BILLING-QA-REPORT.md). |
 
 ## Pre-reset focused verification snapshot (2026-11-22; historical QA data)
 
@@ -32,7 +50,7 @@ The user confirmed the configured Neon database is test-only and authorized targ
 | Grading logic and UI | **Pass in QA.** Marks were entered in the browser for 16 percentages spanning 0, 34.99, 35, 39.99, 40, 49.99, 50, 59.99, 60, 69.99, 70, 79.99, 80, 89.99, 90, and 100. All eight grades rendered correctly. Blank marks were rejected without rows; explicit zero was saved. |
 | Publication, results, GPA, position, report cards, and printing | **Pass for the temporary exam.** UI publication locked marks; 8 result rows and 16 subject rows rendered; grade points, average GPA, and all 8 class positions matched expectations. A new report card and an existing report card opened. Print media hid the print controls and retained the marksheet. |
 | Historical published exams | **No unassigned scales found.** All 48 pre-existing published exams had a scale assignment. However, the legacy `Grade Scale 1` contains only A+, A, B+, and B; some older marksheets therefore render `N/A`. Four Grade 5 term exams in year 2083 each have 15 missing student-subject mark entries for the currently enrolled cohort. Preserve all published marks and assignments pending evidence and school approval. |
-| Billing and migrations | **No billing logic or migration changes.** Broad billing QA: 47 passed, 0 failed, 10 blocked, 13 not executed. All 15 existing migrations remained applied; no migration was run. |
+| Billing and migrations | **Baseline only.** The 2026-11-22 billing run reported 47/0/10/13; the 2026-11-23 follow-up above supersedes it with 71/0/4/0. No billing calculation logic or migration changed. |
 | Local validation | Final lint, TypeScript, tests, Prisma validation, and production build are listed below after rerun. |
 
 ### Safe Accountant provisioning procedure
@@ -57,10 +75,10 @@ Use a unique password of at least 14 characters. It is passed only through the p
 | Academic-risk integration test | Pass against the confirmed isolated QA database; missing, blank, and zero marks were checked; the test's temporary records were cleaned up |
 | Prisma schema | Pass: `npx prisma validate`; generated client successfully |
 | Prisma migrations | Pass: all 15 migrations remain applied; `npx prisma migrate status` reports up to date. No migration was run for this refresh. |
-| Production build | Pass: `npm run build` |
-| Billing QA report | Latest run: 47 passed, 0 failed, 10 blocked, 13 not executed. See [the billing QA report](./tests/billing/BILLING-QA-REPORT.md). |
+| Production build | **Pass with Webpack.** The default Turbopack `npm run build` attempt timed out in Babel loader worker IPC on the changed client pages; `npm run build -- --webpack` then compiled, type-checked, generated all 58 pages, and completed route tracing. Its route inventory contained no `/api/sections`. |
+| Billing QA report | Latest final status after full run and focused retests: 71 passed, 0 failed, 4 blocked, 0 not executed. See [the billing QA report](./tests/billing/BILLING-QA-REPORT.md). |
 | Accountant route smoke test | 25 dashboard routes returned HTTP 200. One initial compile timeout was resolved by retrying; class-subjects loaded its data. |
-| QA cleanup | Temporary Accountant accounts, two exams, and 16 marks were removed. The database returned to 49 exams / 48 published exams. |
+| QA cleanup | Prior grading-test accounts, exams, and marks were cleaned up. The marked billing fixture was removed and its saved test-ID mapping restored. The fictional QA dataset, working Accountant account, and UI-generated financial ledger records were retained. |
 
 No Prisma schema changes or migrations were made, and the destructive production seed was not run.
 
@@ -74,13 +92,13 @@ Status meanings: **Tested** means exercised through the UI or a focused test; **
 | Student registration and enrollment | Partial | Created a temporary student and Grade 5 enrollment through the UI, then removed the QA record. The school confirmed it does not use sections; section selection was removed from the student UI/profile path while legacy database columns and data are preserved. |
 | Student profile and account statement | Partial | Existing student profile showed enrollment, bills, payments, discounts, and a separate `Remaining Due` amount. Profile edit, transfer, and other account-history cases were not exercised. |
 | Teacher, class, subject, academic year/term, class-subject, and teacher-assignment management | Partial | Pages and existing records rendered. Create, edit, delete, activation, and relationship validation were not submitted through the UI. |
-| Fee structure management | Partial | Fee form and existing fee data rendered. Fee create/edit/deactivation was not submitted through the UI. Historical fee snapshots are covered by prior billing QA scenarios. |
-| Student charges and frequency/date rules | Partial | Charge form rendered. UI create/edit/deactivate was not submitted. Prior isolated billing QA covered MONTHLY, TERM, ANNUAL, ONE_TIME, date eligibility, replacement after unpaid cancellation, and concurrent bill generation. |
-| Discounts | Partial | Discount form and configured discount rendered. The basic discount calculations were covered by prior billing QA, but discount date-boundary and overlap cases remain untested. |
-| Bill generation, detail, cancellation, and regeneration | Partial | Bills list and an existing bill detail rendered, including line items and balances. Bill creation/cancellation were not submitted through the UI. Prior billing QA covered overlapping periods, duplicate requests, charge release on unpaid cancellation, and payment-protected cancellation. |
-| Student payments and outstanding balances | Partial | Payment history and the original bill's remaining amount rendered in the UI. Posting or reversing a payment through the UI was not tested. Payment idempotency, partial/full settlements, waivers, and concurrency have prior API-level QA evidence. |
-| Salary records and salary payments | Partial | Salary list showed gross Rs. 18,000, paid Rs. 12,000, and remaining Rs. 6,000. The concurrent salary-payment regression test passed. A salary/payment submission through the UI was not tested. |
-| Expenses and bulk adjustments | Partial | Both forms and student choices rendered. No expense or bulk adjustment was submitted. |
+| Fee structure management | Partial | UI create/edit succeeded and duplicate creation showed HTTP 409; temporary test fees were removed. Deactivation and cross-year UI editing were not tested. Historical snapshots have API-level coverage. |
+| Student charges and frequency/date rules | Partial | UI create/edit/delete succeeded; a shared one-student BUS charge was also submitted and removed. Deactivation and every frequency through the UI were not tested; API tests cover MONTHLY, TERM, ANNUAL, ONE_TIME, dates, cancellation replacement, and concurrency. |
+| Discounts | Partial | UI individual edit from 12.5% to 15% and a one-student bulk discount succeeded; both test discounts were removed. API coverage includes all seven date/overlap cases and BUS/MISC exclusion; individualized sheet-mode bulk entry was not tested. |
+| Bill generation, detail, cancellation, and regeneration | Tested for core flow | Generated bills through the UI, inspected detail, cancelled an unpaid bill, regenerated it, and recorded a partial payment. API tests cover overlap, duplicate requests, charge release, and paid/partial cancellation protection. |
+| Student payments and outstanding balances | Tested for core flow | UI partial/full payments, waiver, payment history, zero balance, and student statement were verified. Reversal/refund workflows were not tested. |
+| Salary records and salary payments | Partial | Salary creation and partial/full UI payments succeeded. A payment made before the BS date-picker fix has an incorrect historical date and remains untouched pending an authorized correction/reversal decision. |
+| Expenses and bulk adjustments | Partial | Expense create/edit succeeded with BS date persistence and temporary expense cleanup. Shared bulk discount and BUS-charge submissions succeeded; sheet-row mode and partial-failure handling were not tested. |
 | Exams and marks | Tested | Created a temporary two-subject Grade 5 / Term 4 exam through the UI, entered marks for 8 students at 16 boundary percentages, and saved explicit zeros. The UI rejected blank input; API verification found no row from the rejected save. Published and locked the exam through the UI. |
 | Results, GPA, position, and marksheets | Tested for temporary exam | Verified 8 result rows, 16 subject grades, all eight grades, matching arithmetic-mean GPA, and 8 unique positions matching percentage ranking. Generated a new report card and checked print media. An existing Grade 8 / Term 4 report card opened; grades below its legacy scale's lowest defined band showed `N/A`. |
 | School settings | Partial | Settings form rendered; save and validation were not tested. |
@@ -111,11 +129,7 @@ Prior QA examples:
 - With a Rs. 100 partial payment, the first bill's remaining amount stayed on that bill; the next bill was Rs. 17,300 and the statement total was Rs. 43,900.
 - The frequency test verified monthly quantity 3 = Rs. 4,500, term quantity 2 = Rs. 800, annual quantity 3 = Rs. 600, and a one-time amount of Rs. 700.
 
-The latest billing suite had no failures among executed scenarios, but it is not complete:
-
-- **Blocked (10):** previous-dues/credit application scenarios and injected transaction rollback cases.
-- **Not executed (13):** multi-year billing, seven discount-date/overlap cases, concurrent payment-plus-waiver, and decimal/small/large/zero-value amounts.
-- The billing runner calls API handlers directly; it does not certify browser workflows or authorization.
+The billing follow-up now reports **71 PASS, 0 FAIL, 4 BLOCKED, 0 NOT EXECUTED** after focused retries. Previous dues, multi-year billing, all seven discount date/overlap cases, concurrent payment-plus-waiver, precision boundaries, and available rollback cases were executed. The four blocked cases are E05-E07 and I09: the product has no credit creation/application API, service, or UI, so the credit and credit-rollback behavior cannot be tested. The stress runner calls API handlers directly and does not certify authorization; browser financial workflows are separately documented above.
 
 ## Deployment blockers and handoff tasks
 
@@ -123,7 +137,7 @@ The latest billing suite had no failures among executed scenarios, but it is not
 2. **Resolve legacy grading interpretation.** Recover the complete historical Grade Scale 1 definition or preserved published artifacts, then obtain a documented school decision about the existing `N/A` values. Do not silently alter the pinned scale or grades.
 3. **Complete remaining authentication tests.** QA Accountant sign-in and feature access passed, but logout, session expiry, password reset/recovery, and detailed role/API authorization cases remain untested.
 4. **Complete production configuration review.** Production values, secret rotation, hosting configuration, and production database target were not available for verification. Keep secrets out of source control and use a separate production database.
-5. **Close billing coverage gaps.** The billing run had 10 blocked and 13 unexecuted cases. Resolve previous-dues/credit scope and run transaction rollback, multi-year, discount-boundary, concurrent payment-plus-waiver, and amount precision cases before certifying billing fully.
+5. **Resolve credit feature scope.** Four credit creation/application and credit-rollback scenarios remain blocked because the product exposes no credit business workflow. Implement or formally defer that feature, then run its validation, partial/duplicate-application, and rollback tests before certifying billing fully.
 6. **Run a deployment handoff rehearsal.** Validate backups/restore, migration procedure, monitoring/log access, and rollback on a production-like staging deployment. No production deployment or restore drill was performed in this audit.
 
 ## Evidence notes

@@ -1338,6 +1338,7 @@ export default function TeacherSalariesPage() {
                                           onChange={(value) =>
                                             setPaymentDate(value)
                                           }
+                                          valueFormat="BS"
                                         />
                                       </div>
 

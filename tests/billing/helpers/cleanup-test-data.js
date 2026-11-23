@@ -5,7 +5,9 @@ export async function cleanupTestBills(prisma, fixture) {
   const markedBills = await prisma.bill.findMany({
     where: {
       studentId: { in: students },
-      academicYearId: fixture.academicYearId,
+      academicYearId: {
+        in: fixture.academicYearIds ?? [fixture.academicYearId],
+      },
       notes: { startsWith: MARKER },
     },
     select: { id: true },

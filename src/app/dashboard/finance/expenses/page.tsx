@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { BikramDatePicker } from "@inicrea/bikram-sambat-react";
 import "@inicrea/bikram-sambat-react/styles.css";
-import { adDateToBSInput, bsInputToADDate, formatBSDate } from "@/lib/nepali-date";
+import { adDateToBSInput, formatBSDate } from "@/lib/nepali-date";
 
 type AcademicYear = { id: string; name: string; isActive: boolean };
 type Expense = {
@@ -150,10 +150,7 @@ export default function ExpensesPage() {
         {
           method: editingId ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...form,
-            expenseDate: bsInputToADDate(form.expenseDate),
-          }),
+          body: JSON.stringify(form),
         },
       );
       const data = await response.json();
