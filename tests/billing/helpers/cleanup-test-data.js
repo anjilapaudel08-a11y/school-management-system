@@ -1,6 +1,6 @@
 import { MARKER, SCHOOL_NAME } from "../fixtures/billing-test-data";
 
-export async function cleanupTestBills(prisma, fixture) {
+export async function cleanupTestBills(prisma, fixture, runId) {
   const students = Object.values(fixture.studentIds);
   const markedBills = await prisma.bill.findMany({
     where: {
@@ -8,7 +8,7 @@ export async function cleanupTestBills(prisma, fixture) {
       academicYearId: {
         in: fixture.academicYearIds ?? [fixture.academicYearId],
       },
-      notes: { startsWith: MARKER },
+      notes: { startsWith: `${MARKER} ${runId}` },
     },
     select: { id: true },
   });

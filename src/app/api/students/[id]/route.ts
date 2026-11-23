@@ -1,26 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isPrismaErrorCode } from "@/lib/prisma-error";
+import { parseOptionalStudentDateOfBirth } from "@/lib/student-validation";
 
 type RouteContext = {
   params: Promise<{
     id: string;
   }>;
 };
-
-function parseOptionalDate(value: unknown) {
-  if (value === undefined || value === null || value === "") {
-    return null;
-  }
-
-  const date = new Date(String(value));
-
-  if (Number.isNaN(date.getTime())) {
-    return undefined;
-  }
-
-  return date;
-}
 
 function parseOptionalRollNumber(value: unknown) {
   if (value === undefined || value === null || value === "") {
@@ -156,7 +143,9 @@ export async function PATCH(
         ? body.guardianPhone.trim() || null
         : null;
 
-    const dateOfBirth = parseOptionalDate(body.dateOfBirth);
+    const dateOfBirth = parseOptionalStudentDateOfBirth(
+      body.dateOfBirth,
+    );
 
     if (
       body.dateOfBirth !== undefined &&
@@ -354,6 +343,9 @@ export async function DELETE(
         charges: true,
         discounts: true,
         credits: true,
+        enrollments: {
+          select: { id: true },
+        },
       },
     });
 
@@ -409,6 +401,16 @@ export async function DELETE(
         {
           error:
             "This student cannot be deleted because student credits exist.",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (student.enrollments.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "This student cannot be deleted because enrollment history exists.",
         },
         { status: 409 }
       );

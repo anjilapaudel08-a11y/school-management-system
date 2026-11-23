@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getPrimarySchool } from "@/lib/school";
 
 export async function GET() {
   const requestStart = Date.now();
@@ -9,7 +10,7 @@ export async function GET() {
 
     const schoolStart = Date.now();
 
-    const school = await prisma.school.findFirst();
+    const school = await getPrimarySchool();
 
     console.log(
       `[classes] school.findFirst(): ${
@@ -63,7 +64,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const school = await prisma.school.findFirst();
+    const school = await getPrimarySchool();
 
     if (!school) {
       return NextResponse.json(

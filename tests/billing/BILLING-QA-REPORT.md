@@ -1,52 +1,36 @@
 # Billing QA Report
 
 Test target: ep-green-glade-ayptuugl-pooler.c-5.us-east-2.aws.neon.tech/neondb
-Fixture: BILL_QA_2083 (isolated school; existing school data was not used)
+Fixture: BILL_QA_2083 (isolated billing QA school used for the pre-reset run)
 
 ## Overall results
-
-The most recent completed full billing-suite run was **before** the student-credit implementation:
 
 | Metric | Result |
 |---|---:|
 | Total scenarios | 75 |
 | Passed | 71 |
 | Failed | 0 |
-| Blocked | 4 |
-| Not executed | 0 |
+| Blocked | 0 |
+| Not executed | 4 |
 | Critical defects | 0 |
 | High-priority defects | 0 |
 
-## Student-credit implementation follow-up (2026-11-23)
-
-- Added Accountant-only manual credit issuance, same-year partial application, idempotency, reversal audit, and transaction-safe balance updates.
-- Applied migration `20261123100000_add_student_credit_workflows` to the verified isolated QA database after explicit approval. It is additive; existing payment, bill, credit, salary, and other QA records were not modified.
-- Existing credits with incomplete audit metadata remain visible but unavailable for application; no issuer, reason, date, or approval detail is fabricated.
-- Updated settlement readers to exclude reversed applications while retaining their history. Payment records and their actual paid amounts are not modified by credit operations.
-- Static verification: 7 credit rule/authorization tests and 4 billing unit tests pass; TypeScript, lint, Prisma schema validation, and the Webpack production build pass.
-- The gated credit integration suite passed against the verified QA target. It covered issuance/retry, partial application, caps, same-year restrictions, concurrency, payment immutability, injected rollback, reversal, and legacy-credit ineligibility. Its temporary rows were removed.
-- Accountant browser verification passed: issued a Rs. 250.50 credit, applied Rs. 200.00 to a temporary Rs. 1,000 bill, verified Rs. 50.50 remained, reversed the application, and confirmed the full Rs. 1,000 bill balance and retained reversal audit. The legacy unaudited credit remained disabled. The temporary credit, bill, and Accountant account were removed; a targeted database check found no test-created residue.
-- The complete stress billing suite has not been rerun since credit implementation; the pre-credit full run remains 71 PASS, 0 FAIL, 4 BLOCKED. The credit-specific integration suite and browser flow are separate verification.
-- Reproduce the gated integration run only against a verified QA target with the explicit environment confirmations `BILLING_TEST_CONFIRMATION=BILLING_QA_ONLY` and `CREDIT_QA_CONFIRMATION=STUDENT_CREDIT_QA_ONLY`, using `npx tsx --test tests/billing/student-credit.integration.test.js`. The test deletes only temporary IDs it creates.
-
 ## Execution note
 
-The pre-implementation run's counts include focused retests of every initial failure. That run had a transient database disconnect in D02 and test-harness failures in I02, I07, I08, and `master`. D02 passed on retry. The rollback injector was fixed to restore Prisma's bound `$transaction` method; I02, I07, I08, and `master` then passed focused retries. I08's direct service call now catches only the expected injected failure and allows a longer test-only transaction wait. These were test-harness/environment issues, not application billing defects.
+The broad suite is supplemented by focused live-database retests of quantity-based charges, concurrent bill numbering, idempotent payment retries, and student deletion with billing history.
 
-The run emitted a `pg` overlapping-query deprecation warning. Expected rejected-payment cases also logged server-side error stacks while returning the expected validation responses; their scenarios passed.
+## Student-credit regression and data preservation (pre-reset run, 2026-11-23)
 
-## Accountant browser retest before student-credit migration (2026-11-22 to 2026-11-23)
+- The full billing stress runner completed with **71 PASS, 0 FAIL, 0 BLOCKED, and 4 NOT EXECUTED**. E05-E07 and I09 are intentionally delegated by this runner to the gated credit integration test; that test passed against the same verified QA target.
+- The initial attempt produced 69 failures because the checked-in fixture mapping referenced a school, academic year, student, and fee that did not exist in this database. Read-only inspection confirmed that the marked school was absent. These were stale-fixture/test-harness failures, not billing-calculation defects. A new separately marked QA fixture was prepared without resetting, reseeding, or deleting any existing records, and the refreshed mapping enabled the successful complete rerun.
+- An intermediate shell launch ended before it wrote a final report; read-only verification found no leftover bills or credit changes, and the suite was rerun to completion in a persistent session. A direct `node --test` attempt also could not resolve the repository's extensionless imports; the focused tests passed under the project-compatible `npx tsx --test` runner.
+- Billing cleanup now uses a unique per-run marker, so it only removes bills created by that invocation. The pre-existing credit snapshot was identical before and after the stress and credit integration runs: one credit row, zero application/audit rows, unchanged snapshot hash. No temporary stress bills or credit-test academic years remained afterward.
+- The expected rejection scenarios logged API error stacks while asserting their validation responses; they passed. The run also emitted a `pg` overlapping-query deprecation warning, which did not affect results.
+- `npm run lint`, `npx tsc --noEmit`, `npx prisma validate`, all 21 unit tests, the gated student-credit integration test, and `npm run build -- --webpack` passed. No financial calculations were changed. No production system was accessed and no deployment was performed.
 
-At the time of this earlier browser retest, the fictional QA dataset was preserved; no reset, truncate, reseed, or migration was run. The later student-credit migration and verification are recorded above.
+## Subsequent authorized QA reset (2026-11-23)
 
-- Fee structure creation and editing succeeded. A duplicate submission showed the expected HTTP 409 validation error; temporary fee rows were removed.
-- A student charge was created and edited; its test record was deleted and its absence verified. A shared bulk BUS charge was submitted for one student (`1 charges saved`), appeared in the student-charge workflow, and was removed afterward.
-- An individual discount was edited from 12.5% to 15%; a one-student bulk discount also succeeded. Both temporary discounts were removed; the two pre-existing fictional discounts remain.
-- The Accountant generated bill `BILL-000005` for Aarav, recorded partial payments, a waiver, and a final payment, and verified the zero balance, payment history, and student-profile financial summary. An unpaid Sita bill was cancelled and regenerated as `BILL-000009`; a partial payment was recorded on the replacement.
-- Salary records and partial/full salary payments were submitted through the UI. The teacher selector no longer includes a teacher from another school. The bill and salary date pickers now use BS values. One salary payment recorded before that picker fix has a wrong historical date; it was not altered, and requires an authorized reversal/correction decision.
-- Expense create/edit succeeded after fixing the form to submit its BS date unchanged; the temporary expense was removed. UI overpayment validation prevented submission. The bulk adjustment and billing forms displayed their successful/error outcomes.
-
-These are browser workflow checks against the fictional QA school, not production tests.
+After these billing and credit results were recorded, the user explicitly authorized a full reset and replacement of the isolated QA database. That reset removed this historical billing fixture and its financial rows. The billing fixture ID mapping was regenerated against new marked records, but the billing stress suite and credit integration test have **not** been rerun after the reset. Treat all results above as pre-reset evidence until regression-tested again. Full reset counts and the current fixture baseline are in [QA-RESET-REPORT.md](../../QA-RESET-REPORT.md).
 
 ## Individual scenario report
 
@@ -59,9 +43,9 @@ These are browser workflow checks against the fictional QA school, not productio
 | A05 | Student-specific BUS and MISC charges | Rs. 26,700 | {"total":26700} | PASS |
 | A06 | Discounts exclude student-specific charges | Rs. 24,900 | {"total":24900,"discount":1800} | PASS |
 | A07 | Quantity-based BUS charge | Rs. 26,300 | {"total":26300,"bus":[{"quantity":6,"rate":800,"amount":4800}]} | PASS |
-| A08 | Student charge isolation | S001 has no S003 charges | {"studentId":"cmws50vb8000duww4ulx51qud","studentChargeItems":0} | PASS |
+| A08 | Student charge isolation | S001 has no S003 charges | {"studentId":"cmwt879o4000dkww4sxcg0pbl","studentChargeItems":0} | PASS |
 | A09 | Grade-specific fees | Rs. 24,600 | {"total":24600,"feeTypes":["TUITION","ADMISSION","COMPUTER_LAB","EXAM"]} | PASS |
-| SC01 | Student-charge frequency amounts | All student-charge frequencies use rate multiplied by their calculated quantity | {"chargeItems":[{"studentId":"cmws50wtz000juww4yv2q3ai3","description":"BUS Monthly","quantity":3,"amount":4500},{"studentId":"cmws50wtz000juww4yv2q3ai3","description":"Student Misc One-Time","quantity":1,"amount":700},{"studentId":"cmws50xj8000muww4nfllu6xd","description":"BUS Monthly","quantity":3,"amount":3000},{"studentId":"cmws50xj8000muww4nfllu6xd","description":"BUS Term Quantity Two","quantity":2,"amount":800},{"studentId":"cmws50yh1000puww4crzi3mc1","description":"BUS Annual Quantity Three","quantity":3,"amount":600},{"studentId":"cmws50yh1000puww4crzi3mc1","description":"BUS Monthly","quantity":3,"amount":3600}]} | PASS |
+| SC01 | Student-charge frequency amounts | All student-charge frequencies use rate multiplied by their calculated quantity | {"chargeItems":[{"studentId":"cmwt87avd000jkww4cmip4xxs","description":"BUS Monthly","quantity":3,"amount":4500},{"studentId":"cmwt87avd000jkww4cmip4xxs","description":"Student Misc One-Time","quantity":1,"amount":700},{"studentId":"cmwt87bgt000mkww4lduwprj1","description":"BUS Monthly","quantity":3,"amount":3000},{"studentId":"cmwt87bgt000mkww4lduwprj1","description":"BUS Term Quantity Two","quantity":2,"amount":800},{"studentId":"cmwt87c2d000pkww4yu53s719","description":"BUS Annual Quantity Three","quantity":3,"amount":600},{"studentId":"cmwt87c2d000pkww4yu53s719","description":"BUS Monthly","quantity":3,"amount":3600}]} | PASS |
 | SC02 | Unpaid first bill does not repeat charges | Unpaid first bill retains its charges; later bill adds neither duplicate charges nor old balances | {"firstBill":{"status":"UNPAID","total":26700,"studentChargeItems":2},"secondBill":{"total":17300,"studentChargeItems":0},"statement":{"originalBillDue":26700,"subsequentBillDue":17300,"totalDue":44000}} | PASS |
 | SC03 | Partial first bill does not repeat charges | Partial settlement stays on the original bill; later bill has no duplicate charge or balance | {"firstBill":{"status":"PARTIAL","outstanding":26600},"secondBill":{"total":17300,"studentChargeItems":0},"statement":{"originalBillDue":26600,"subsequentBillDue":17300,"totalDue":43900}} | PASS |
 | SC04 | Charge remains eligible until active dates | A charge outside one period remains available to the next eligible period | {"earlyBillChargeItems":0,"eligibleBillCharge":{"quantity":1,"amount":1200}} | PASS |
@@ -75,7 +59,7 @@ These are browser workflow checks against the fictional QA school, not productio
 | B08 | Invalid bill inputs | All invalid requests rejected | {"rejectedStatuses":[400,400,400,400,404,400]} | PASS |
 | B09 | Concurrent identical bill requests | Exactly one bill is created | {"statuses":[201,409],"persistedBills":1} | PASS |
 | D01 | Annual class fee billed once | Admission fee appears only in the first eligible bill | [{"period":"P1","admissionCount":1},{"period":"P2","admissionCount":0},{"period":"P3","admissionCount":0},{"period":"P4","admissionCount":0}] | PASS |
-| D02 | Term fee schedule | One exam fee in each configured term | [{"period":"P1","examCount":1},{"period":"P2","examCount":1},{"period":"P3","examCount":1},{"period":"P4","examCount":1}] (focused retry after transient disconnect) | PASS |
+| D02 | Term fee schedule | One exam fee in each configured term | [{"period":"P1","examCount":1},{"period":"P2","examCount":1},{"period":"P3","examCount":1},{"period":"P4","examCount":1}] | PASS |
 | D03 | Class one-time fee | Class miscellaneous appears once in the academic year | [{"period":"P1","oneTimeCount":1},{"period":"P2","oneTimeCount":0},{"period":"P3","oneTimeCount":0},{"period":"P4","oneTimeCount":0}] | PASS |
 | D04 | One-time student charge start date | Charge first appears in its first eligible period only | [{"period":"P1","count":0},{"period":"P2","count":0},{"period":"P3","count":1},{"period":"P4","count":0}] | PASS |
 | D05 | Two-month inclusive billing period | Tuition Rs. 10,000; lab Rs. 1,000 | {"tuition":10000,"lab":1000,"total":19600} | PASS |
@@ -111,7 +95,7 @@ These are browser workflow checks against the fictional QA school, not productio
 | E02 | Partial prior bill remains on original bill | Prior bill retains its Rs. 16,500 balance; new bill does not carry it forward | {"priorBillDue":16500,"nextBillTotal":"17300","statementDue":33800} | PASS |
 | E03 | Multiple prior payments remain allocated to original bill | Three payments reduce only the original bill; the subsequent bill contains no prior balance | {"paymentCount":3,"paidAmount":4000,"nextBillTotal":"17300","statementDue":34800} | PASS |
 | E04 | Fully settled prior bill is not carried forward | A paid prior bill has zero due; new bill contains only new-year charges | {"oldStatus":"PAID","oldDue":0,"nextBillTotal":"17300","statementDue":17300} | PASS |
-| F11-concurrent-waiver | Concurrent payment and waiver cannot over-settle | Only one settlement succeeds; total payment plus waiver stays within the bill balance | {"statuses":[201,400],"paid":8000,"waived":7000,"remainingDue":6500} | PASS |
+| F11-concurrent-waiver | Concurrent payment and waiver cannot over-settle | Only one settlement succeeds; total payment plus waiver stays within the bill balance | {"statuses":[400,201],"paid":8000,"waived":7000,"remainingDue":6500} | PASS |
 | G01 | Decimal amounts and fractional discount rounding | Rs. 0.15 fee rounds 50% discount to Rs. 0.08 and net to Rs. 0.07 | {"amount":0.15,"discount":0.08,"net":0.07,"billTotal":20000.07} | PASS |
 | G02 | Smallest positive fee and rounding | Rs. 0.03 fee rounds a 50% discount to Rs. 0.02 and preserves a Rs. 0.01 balance | {"amount":0.03,"discount":0.02,"net":0.01} | PASS |
 | G03 | Large amount precision | Large monthly fee, percentage discount, and bill total remain cent-accurate | {"tuitionAmount":29999999999.97,"tuitionDiscount":3000000000,"tuitionNet":26999999999.97,"billTotal":27000006499.97} | PASS |
@@ -119,25 +103,25 @@ These are browser workflow checks against the fictional QA school, not productio
 | TEA01 | Teacher list school scoping | Teacher list contains only records from the configured school | {"teacherCount":5,"schoolScoped":true} | PASS |
 | EXP01 | Expense form BS date contract | Expense creation and editing preserve the selected Bikram Sambat date | {"status":200,"amount":44.75,"expenseDateBS":{"year":2083,"month":8,"day":7}} | PASS |
 | I01 | Bill generation transaction rollback | Failure after bill, bill items, and charge applications are written leaves none persisted | {"injected":true,"status":500,"persistedBills":0,"activeApplications":0} | PASS |
-| I02 | Payment and balance-allocation rollback | Failure after payment creation and bill update leaves neither payment nor balance change | Focused retry passed; payment absent, paid amount 0, bill remains UNPAID | PASS |
-| I07 | Waiver transaction rollback | Failure after waiver payment and bill update leaves neither the waiver nor status change | Focused retry passed; payment absent, paid amount 0, bill remains UNPAID | PASS |
-| I08 | Salary payment transaction rollback | Failure after salary-payment creation and salary update leaves the payment absent and salary pending | Focused retry passed; no salary payment persisted and salary remains PENDING | PASS |
-| master | Master bill, payment, waiver, and statement workflow | Successful bill settlement is reflected consistently in payments and account statements; previous due remains on its original bill | Focused retry passed; payment, waiver, original-bill due, next bill, and statement totals matched | PASS |
-| E05 | Excess credit application rejected | Reject an application that exceeds available credit or bill due | Integration rejected over-credit and over-bill applications; no excess balance was applied | PASS |
-| E06 | Partial credit application | Apply only the requested portion and retain the unused credit | Rs. 30.00 applied; a same-key retry replayed once; a separate Rs. 10.00 application left Rs. 10.00 credit and Rs. 60.00 bill due | PASS |
-| E07 | Duplicate credit application | Prevent retrying an application twice while allowing separate partial applications | Same-key/same-payload retry replayed; changed payload with the same key returned 409; one application row remained | PASS |
-| I09 | Credit application transaction rollback | Inject failures inside application and reversal and verify rollback | Injected failures left no application/balance update and left the unreversed application unchanged; successful reversal then restored balances | PASS |
+| I02 | Payment and balance-allocation rollback | Failure after payment creation and bill update leaves neither payment nor balance change | {"injected":true,"status":500,"paymentPersisted":false,"paidAmount":0} | PASS |
+| I07 | Waiver transaction rollback | Failure after waiver payment and bill update leaves neither the waiver nor status change | {"injected":true,"status":500,"paymentPersisted":false,"billStatus":"UNPAID"} | PASS |
+| I08 | Salary payment transaction rollback | Failure after salary-payment creation and salary update leaves the payment absent and salary pending | {"injected":true,"paymentCount":0,"status":"PENDING"} | PASS |
+| master | Master bill, payment, waiver, and statement workflow | Successful bill settlement is reflected consistently in payments and account statements; previous due remains on its original bill | {"firstBillDue":15500,"secondBillTotal":"17300","statementDue":32800,"paymentCount":1} | PASS |
+| E05 | Excess credit application rejected | Scenario executed in the separate credit integration test | "NOT EXECUTED in this runner; covered by the separate student-credit.integration.test.js." | NOT EXECUTED |
+| E06 | Partial credit application | Scenario executed in the separate credit integration test | "NOT EXECUTED in this runner; covered by the separate student-credit.integration.test.js." | NOT EXECUTED |
+| E07 | Duplicate credit application | Scenario executed in the separate credit integration test | "NOT EXECUTED in this runner; covered by the separate student-credit.integration.test.js." | NOT EXECUTED |
+| I09 | Credit application transaction rollback | Scenario executed in the separate credit integration test | "NOT EXECUTED in this runner; covered by the separate student-credit.integration.test.js." | NOT EXECUTED |
 
 ## Defect report
 
-No application billing defects were reproduced. The five initial failures were traced to one transient test-database disconnect and defects in the test-only transaction-failure injector/assertion; focused reruns passed after the test harness was corrected.
+No failures among executed scenarios.
 
-## Credit integration results
+## Gated credit integration details
 
-- **E05-E07 — excess, partial, duplicate, and same-year behavior:** passed in the gated QA integration test; same-year eligibility and idempotent retry behavior were verified.
-- **I09 — credit-application/reversal rollback:** passed with controlled test-only failure injection; both the application and reversal transactions rolled back cleanly when injected failures occurred.
-
-The credit scenarios previously blocked or not executed are now verified. The complete stress suite has not been rerun since the credit implementation, so its last full count remains the pre-credit result above. Do not infer prior-dues carry-forward from the earlier credit blockers: E01-E04 verified that unpaid and partially paid balances remain on their original bills and are not duplicated on subsequent bills.
+- **E05 — Excess credit application:** applications above available credit or the bill balance were rejected without over-applying funds.
+- **E06 — Partial application:** a Rs. 30.00 application and same-key retry were recorded once; a separate Rs. 10.00 application left Rs. 10.00 credit and Rs. 60.00 due.
+- **E07 — Duplicate application:** same-key/same-payload replayed; changed payload with the same key returned 409; only one application row remained.
+- **I09 — Transaction rollback and reversal:** injected application and reversal failures left balances and audit state unchanged; the successful reversal restored the credit and bill balances while retaining its reversal audit.
 
 ## Inspection findings and scope limitations
 
@@ -152,4 +136,4 @@ The credit scenarios previously blocked or not executed are now verified. The co
 - Concurrent bill-number allocation now uses a transaction-scoped advisory lock; I03 verifies unique numbers.
 - Student deletion is blocked when bills exist, with a database-level RESTRICT constraint as a second safeguard.
 
-This report does not certify the billing module as ready: the complete stress suite must be rerun after credit implementation, and production configuration and production-like recovery testing are outside this QA run.
+The four stress-runner credit cases are covered by the separately passing student-credit integration test. Production configuration, deployment authorization, and production-like recovery testing remain outside this QA report.

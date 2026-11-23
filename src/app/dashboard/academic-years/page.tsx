@@ -90,6 +90,10 @@ export default function AcademicYearsPage() {
         Number(endDay)
       );
 
+      if (endDate < startDate) {
+        throw new Error("End date cannot be before the start date.");
+      }
+
       const response = await fetch("/api/academic-years", {
         method: "POST",
         headers: {

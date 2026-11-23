@@ -21,7 +21,9 @@ test("student registration preserves manual numbers and safely allocates generat
     `;
     assert.equal(databaseInfo.database, target.database);
 
-    const school = await appPrisma.school.findFirstOrThrow();
+    const school = await appPrisma.school.findFirstOrThrow({
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
     const academicYear = await appPrisma.academicYear.findFirstOrThrow({
       where: { schoolId: school.id, isActive: true },
     });
@@ -38,6 +40,34 @@ test("student registration preserves manual numbers and safely allocates generat
       rollNumber: 900,
     };
 
+    const invalidBirthDateMarker = `QA-REG-INVALID-DOB-${randomUUID()}`;
+    const invalidBirthDateResponse = await studentsApi.POST(
+      new Request("http://qa.local/api/students", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...registration,
+          admissionNumber: invalidBirthDateMarker,
+          dateOfBirth: "2024-02-31",
+        }),
+      }),
+    );
+    if (invalidBirthDateResponse.status === 201) {
+      createdStudentIds.push(
+        (await invalidBirthDateResponse.json()).id,
+      );
+    }
+    assert.equal(invalidBirthDateResponse.status, 400);
+    assert.equal(
+      await appPrisma.student.count({
+        where: {
+          schoolId: school.id,
+          admissionNumber: invalidBirthDateMarker,
+        },
+      }),
+      0,
+    );
+
     const createdResponse = await studentsApi.POST(
       new Request("http://qa.local/api/students", {
         method: "POST",
@@ -49,6 +79,24 @@ test("student registration preserves manual numbers and safely allocates generat
     const createdStudent = await createdResponse.json();
     assert.equal(createdStudent.admissionNumber, marker);
     createdStudentIds.push(createdStudent.id);
+
+    const deleteResponse = await studentProfileApi.DELETE(
+      new Request(`http://qa.local/api/students/${createdStudent.id}`, {
+        method: "DELETE",
+      }),
+      { params: Promise.resolve({ id: createdStudent.id }) },
+    );
+    assert.equal(deleteResponse.status, 409);
+    assert.match(
+      (await deleteResponse.json()).error,
+      /enrollment history/,
+    );
+    const retainedStudent = await appPrisma.student.findUnique({
+      where: { id: createdStudent.id },
+      include: { enrollments: true },
+    });
+    assert.ok(retainedStudent);
+    assert.equal(retainedStudent.enrollments.length, 1);
 
     const updatedMarker = `${marker}-UPDATED`;
     const updatedResponse = await studentProfileApi.PATCH(
@@ -64,6 +112,47 @@ test("student registration preserves manual numbers and safely allocates generat
     );
     assert.equal(updatedResponse.status, 200);
     assert.equal((await updatedResponse.json()).admissionNumber, updatedMarker);
+
+    const invalidBirthDatePatch = await studentProfileApi.PATCH(
+      new Request(`http://qa.local/api/students/${createdStudent.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...registration,
+          admissionNumber: updatedMarker,
+          dateOfBirth: "2024-02-31",
+        }),
+      }),
+      { params: Promise.resolve({ id: createdStudent.id }) },
+    );
+    assert.equal(invalidBirthDatePatch.status, 400);
+    assert.equal(
+      (
+        await appPrisma.student.findUniqueOrThrow({
+          where: { id: createdStudent.id },
+          select: { dateOfBirth: true },
+        })
+      ).dateOfBirth,
+      null,
+    );
+
+    const validBirthDatePatch = await studentProfileApi.PATCH(
+      new Request(`http://qa.local/api/students/${createdStudent.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...registration,
+          admissionNumber: updatedMarker,
+          dateOfBirth: "2024-02-29T00:00:00.000Z",
+        }),
+      }),
+      { params: Promise.resolve({ id: createdStudent.id }) },
+    );
+    assert.equal(validBirthDatePatch.status, 200);
+    assert.equal(
+      (await validBirthDatePatch.json()).dateOfBirth,
+      "2024-02-29T00:00:00.000Z",
+    );
 
     const duplicateResponse = await studentsApi.POST(
       new Request("http://qa.local/api/students", {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { canManageStudentCredits } from "@/lib/finance/credit-access";
 
 type CreditAuthorization =
   | {
@@ -24,7 +25,7 @@ export function authorizeCreditSession(session: {
     };
   }
 
-  if (session.user.role !== "ADMIN") {
+  if (!canManageStudentCredits(session.user.role)) {
     return {
       ok: false,
       response: NextResponse.json(

@@ -1,22 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isPrismaErrorCode } from "@/lib/prisma-error";
+import { getPrimarySchool } from "@/lib/school";
+import { parseOptionalStudentDateOfBirth } from "@/lib/student-validation";
 
 class DuplicateAdmissionNumberError extends Error {}
-
-function parseOptionalDate(value: unknown) {
-  if (value === undefined || value === null || value === "") {
-    return null;
-  }
-
-  const date = new Date(String(value));
-
-  if (Number.isNaN(date.getTime())) {
-    return undefined;
-  }
-
-  return date;
-}
 
 function parseOptionalRollNumber(value: unknown) {
   if (value === undefined || value === null || value === "") {
@@ -34,7 +22,7 @@ function parseOptionalRollNumber(value: unknown) {
 
 export async function GET() {
   try {
-    const school = await prisma.school.findFirst();
+    const school = await getPrimarySchool();
 
     if (!school) {
       return NextResponse.json(
@@ -78,7 +66,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const school = await prisma.school.findFirst();
+    const school = await getPrimarySchool();
 
     if (!school) {
       return NextResponse.json(
@@ -163,7 +151,9 @@ export async function POST(request: Request) {
     const academicYearId = body.academicYearId;
     const classId = body.classId;
 
-    const dateOfBirth = parseOptionalDate(body.dateOfBirth);
+    const dateOfBirth = parseOptionalStudentDateOfBirth(
+      body.dateOfBirth,
+    );
 
     const rollNumber = parseOptionalRollNumber(
       body.rollNumber

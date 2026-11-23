@@ -1,21 +1,90 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+type SchoolFormData = {
+  name: string;
+  shortName: string;
+  address: string;
+  phone: string;
+  email: string;
+  website: string;
+  establishedYear: string;
+  description: string;
+};
+
+const emptyFormData: SchoolFormData = {
+  name: "",
+  shortName: "",
+  address: "",
+  phone: "",
+  email: "",
+  website: "",
+  establishedYear: "",
+  description: "",
+};
 
 export default function SchoolForm() {
-  const [formData, setFormData] = useState({
-    name: "",
-    shortName: "",
-    address: "",
-    phone: "",
-    email: "",
-    website: "",
-    establishedYear: "",
-    description: "",
-  });
-
+  const [formData, setFormData] = useState(emptyFormData);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadSchool() {
+      try {
+        const response = await fetch("/api/school");
+
+        if (response.status === 404) {
+          return;
+        }
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error ?? "Failed to load school information.");
+        }
+
+        if (typeof data.name !== "string") {
+          throw new Error("School information could not be loaded.");
+        }
+
+        if (active) {
+          setFormData({
+            name: data.name,
+            shortName: data.shortName ?? "",
+            address: data.address ?? "",
+            phone: data.phone ?? "",
+            email: data.email ?? "",
+            website: data.website ?? "",
+            establishedYear: data.establishedYear?.toString() ?? "",
+            description: data.description ?? "",
+          });
+        }
+      } catch (error) {
+        console.error("School load error:", error);
+        if (active) {
+          setMessage(
+            error instanceof Error
+              ? error.message
+              : "Failed to load school information.",
+          );
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadSchool();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   function handleChange(
     event: React.ChangeEvent<
@@ -50,13 +119,17 @@ export default function SchoolForm() {
       const data = await response.json();
 
       if (!response.ok) {
-        setMessage(data.error ?? "Failed to save school.");
-        return;
+        throw new Error(data.error ?? "Failed to save school information.");
       }
 
-      setMessage("School information saved successfully.");
-    } catch {
-      setMessage("Something went wrong.");
+      setMessage(data.message ?? "School information saved successfully.");
+    } catch (error) {
+      console.error("School save error:", error);
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Failed to save school information.",
+      );
     } finally {
       setSaving(false);
     }
@@ -112,6 +185,8 @@ export default function SchoolForm() {
             id="establishedYear"
             name="establishedYear"
             type="number"
+            min="1"
+            step="1"
             value={formData.establishedYear}
             onChange={handleChange}
             className="w-full rounded-lg border border-(--border) bg-(--surface) px-4 py-3 outline-none focus:border-(--primary)"
@@ -209,17 +284,20 @@ export default function SchoolForm() {
       </div>
 
       {message && (
-        <p className="rounded-lg bg-(--primary-light) px-4 py-3 text-sm text-(--primary-dark)">
+        <p
+          role="status"
+          className="rounded-lg bg-(--primary-light) px-4 py-3 text-sm text-(--primary-dark)"
+        >
           {message}
         </p>
       )}
 
       <button
         type="submit"
-        disabled={saving}
+        disabled={saving || loading}
         className="rounded-lg bg-(--primary) px-5 py-3 font-semibold text-white hover:bg-(--primary-hover) disabled:opacity-50"
       >
-        {saving ? "Saving..." : "Save School"}
+        {loading ? "Loading..." : saving ? "Saving..." : "Save School"}
       </button>
     </form>
   );

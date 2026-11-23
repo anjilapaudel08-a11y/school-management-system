@@ -17,6 +17,7 @@ import { loadBill, verifyBillSnapshot, verifySettlement } from "./helpers/databa
 import { withInjectedTransactionFailure } from "./helpers/injected-transaction-failure";
 
 const results = [];
+const runId = randomUUID();
 const focusedTestIds = process.env.BILLING_QA_FOCUS
   ? new Set(
       process.env.BILLING_QA_FOCUS.split(",")
@@ -59,7 +60,7 @@ async function main() {
       periodStartMonth: period(periodKey).startMonth,
       periodEndYear: 2083,
       periodEndMonth: period(periodKey).endMonth,
-      notes: `${MARKER} ${suffix}`,
+      notes: `${MARKER} ${runId} ${suffix}`,
     });
     const makeBillBodyForYear = (
       studentKey,
@@ -75,7 +76,7 @@ async function main() {
     });
 
     async function resetBills() {
-      await cleanupTestBills(prisma, fixture);
+      await cleanupTestBills(prisma, fixture, runId);
     }
 
     async function createBill(studentKey, periodKey = "P1", suffix = "test") {
@@ -662,7 +663,7 @@ async function main() {
       assert.equal(responses.filter((response) => response.status === 201).length, 1);
       assert.equal(responses.filter((response) => response.status === 409).length, 1);
       const count = await prisma.bill.count({
-        where: { studentId: student("S009"), academicYearId: fixture.academicYearId, notes: { startsWith: `${MARKER} B09` } },
+        where: { studentId: student("S009"), academicYearId: fixture.academicYearId, notes: { startsWith: `${MARKER} ${runId} B09` } },
       });
       assert.equal(count, 1);
       return { statuses: responses.map((response) => response.status), persistedBills: count };
@@ -850,8 +851,8 @@ async function main() {
 
     await run("F12", "Duplicate payment request", "Repeated identical request must not post twice", async () => {
       const bill = await getCreatedBill(await createBill("S001", "P1", "F12"));
-      const body = { billId: bill.id, amount: 5000, method: "CASH", reference: `${MARKER}-F12` };
-      const headers = { "Idempotency-Key": `${MARKER}-F12` };
+      const body = { billId: bill.id, amount: 5000, method: "CASH", reference: `${MARKER}-${runId}-F12` };
+      const headers = { "Idempotency-Key": `${MARKER}-${runId}-F12` };
       const responses = await Promise.all([
         postJson(api.recordPayment, body, "/api/payments", headers),
         postJson(api.recordPayment, body, "/api/payments", headers),
@@ -862,7 +863,7 @@ async function main() {
         "/api/payments",
         headers,
       );
-      const payments = await prisma.payment.findMany({ where: { billId: bill.id, reference: `${MARKER}-F12` } });
+      const payments = await prisma.payment.findMany({ where: { billId: bill.id, reference: `${MARKER}-${runId}-F12` } });
       assert.deepEqual(responses.map((response) => response.status).sort(), [200, 201]);
       assert.equal(reusedKey.status, 409);
       assert.equal(payments.length, 1);
@@ -1655,7 +1656,7 @@ async function main() {
       assert.equal(injected, true);
       assert.equal(result.status, 500);
       const bills = await prisma.bill.findMany({
-        where: { studentId: student("S003"), notes: `${MARKER} I01-rollback` },
+        where: { studentId: student("S003"), notes: `${MARKER} ${runId} I01-rollback` },
         select: { id: true },
       });
       const applications = await prisma.studentChargeApplication.count({
@@ -1806,17 +1807,17 @@ async function main() {
       };
     }, "HIGH");
 
-    for (const [id, name, reason] of focusedTestIds ? [] : [
-      ["E05", "Excess credit application rejected", "Requires the approved audit migration and explicit QA-database write approval."],
-      ["E06", "Partial credit application", "Requires the approved audit migration and explicit QA-database write approval."],
-      ["E07", "Duplicate credit application", "Requires the approved audit migration and explicit QA-database write approval."],
-      ["I09", "Credit application transaction rollback", "Requires the approved audit migration and explicit QA-database write approval."],
+    for (const [id, name] of focusedTestIds ? [] : [
+      ["E05", "Excess credit application rejected"],
+      ["E06", "Partial credit application"],
+      ["E07", "Duplicate credit application"],
+      ["I09", "Credit application transaction rollback"],
     ]) {
       results.push({
         id,
         name,
-        expected: "Scenario executed and independently verified",
-        actual: `NOT EXECUTED: covered by the separately gated student-credit.integration.test.js; ${reason}`,
+        expected: "Scenario executed in the separate credit integration test",
+        actual: "NOT EXECUTED in this runner; covered by the separate student-credit.integration.test.js.",
         status: "NOT EXECUTED",
         severity: "HIGH",
       });

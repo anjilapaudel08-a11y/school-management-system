@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getPrimarySchool } from "@/lib/school";
 
 export async function GET() {
   try {
-    const school = await prisma.school.findFirst();
+    const school = await getPrimarySchool();
 
     if (!school) {
       return NextResponse.json(
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const school = await prisma.school.findFirst();
+    const school = await getPrimarySchool();
 
     if (!school) {
       return NextResponse.json(
