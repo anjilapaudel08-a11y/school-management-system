@@ -9,6 +9,11 @@ import {
   moneyToCents,
 } from "@/lib/finance/student-credit-rules";
 import { prisma } from "@/lib/prisma";
+import {
+  getConfiguredSchool,
+  SchoolConfigurationError,
+  SCHOOL_SETUP_REQUIRED_MESSAGE,
+} from "@/lib/school";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -25,12 +30,10 @@ export async function GET(
     }
 
     const { id } = await context.params;
-    const school = await prisma.school.findFirst({
-      select: { id: true },
-    });
+    const school = await getConfiguredSchool();
     if (!school) {
       return NextResponse.json(
-        { error: "No school has been configured." },
+        { error: SCHOOL_SETUP_REQUIRED_MESSAGE },
         { status: 404 },
       );
     }
@@ -39,6 +42,9 @@ export async function GET(
       where: {
         id,
         student: {
+          is: { schoolId: school.id },
+        },
+        academicYear: {
           is: { schoolId: school.id },
         },
       },
@@ -113,6 +119,8 @@ export async function GET(
           where: {
             studentId: credit.studentId,
             academicYearId: credit.academicYearId,
+            student: { is: { schoolId: school.id } },
+            academicYear: { is: { schoolId: school.id } },
             status: { not: "CANCELLED" },
           },
           include: {
@@ -152,6 +160,10 @@ export async function GET(
         .filter((bill) => bill.outstandingAmount > 0),
     });
   } catch (error) {
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     console.error("Failed to load student credit:", error);
     return NextResponse.json(
       { error: "Failed to load student credit." },

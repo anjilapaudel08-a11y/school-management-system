@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -19,6 +23,7 @@ export async function POST(
   context: RouteContext,
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await context.params;
     const exam = await prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
@@ -27,8 +32,16 @@ export async function POST(
         )
       `;
 
-      const currentExam = await tx.exam.findUnique({
-        where: { id },
+      const currentExam = await tx.exam.findFirst({
+        where: {
+          id,
+          class: { is: { schoolId: school.id } },
+          term: {
+            is: {
+              academicYear: { is: { schoolId: school.id } },
+            },
+          },
+        },
         include: {
           term: { select: { academicYearId: true } },
           subjects: { select: { id: true } },
@@ -128,6 +141,10 @@ export async function POST(
       exam,
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     if (error instanceof PublicationError) {
       return NextResponse.json(
         { error: error.message },

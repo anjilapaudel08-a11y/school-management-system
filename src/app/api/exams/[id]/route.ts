@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 type RouteContext = {
   params: Promise<{
@@ -21,11 +25,18 @@ export async function GET(
   { params }: RouteContext
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await params;
 
-    const exam = await prisma.exam.findUnique({
+    const exam = await prisma.exam.findFirst({
       where: {
         id,
+        class: { is: { schoolId: school.id } },
+        term: {
+          is: {
+            academicYear: { is: { schoolId: school.id } },
+          },
+        },
       },
       include: {
         term: {
@@ -56,6 +67,10 @@ export async function GET(
 
     return NextResponse.json(exam);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to fetch exam:", error);
 
     return NextResponse.json(
@@ -70,12 +85,19 @@ export async function PATCH(
   { params }: RouteContext
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await params;
     const body = await request.json();
 
-    const existingExam = await prisma.exam.findUnique({
+    const existingExam = await prisma.exam.findFirst({
       where: {
         id,
+        class: { is: { schoolId: school.id } },
+        term: {
+          is: {
+            academicYear: { is: { schoolId: school.id } },
+          },
+        },
       },
       include: {
         term: true,
@@ -186,8 +208,16 @@ export async function PATCH(
         )
       `;
 
-      const currentExam = await tx.exam.findUnique({
-        where: { id },
+      const currentExam = await tx.exam.findFirst({
+        where: {
+          id,
+          class: { is: { schoolId: school.id } },
+          term: {
+            is: {
+              academicYear: { is: { schoolId: school.id } },
+            },
+          },
+        },
         select: { isPublished: true, isLocked: true },
       });
 
@@ -223,6 +253,10 @@ export async function PATCH(
 
     return NextResponse.json(updatedExam);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     if (error instanceof ExamStateError) {
       return NextResponse.json(
         { error: error.message },
@@ -244,6 +278,7 @@ export async function DELETE(
   { params }: RouteContext
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await params;
 
     const deleted = await prisma.$transaction(async (tx) => {
@@ -253,8 +288,16 @@ export async function DELETE(
         )
       `;
 
-      const exam = await tx.exam.findUnique({
-        where: { id },
+      const exam = await tx.exam.findFirst({
+        where: {
+          id,
+          class: { is: { schoolId: school.id } },
+          term: {
+            is: {
+              academicYear: { is: { schoolId: school.id } },
+            },
+          },
+        },
         select: {
           id: true,
           isPublished: true,
@@ -301,6 +344,10 @@ export async function DELETE(
       message: "Exam deleted successfully.",
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to delete exam:", error);
 
     return NextResponse.json(

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isPrismaErrorCode } from "@/lib/prisma-error";
-import { getPrimarySchool } from "@/lib/school";
+import {
+  getConfiguredSchool,
+  SchoolConfigurationError,
+  SCHOOL_SETUP_REQUIRED_MESSAGE,
+} from "@/lib/school";
 import { parseOptionalStudentDateOfBirth } from "@/lib/student-validation";
 
 class DuplicateAdmissionNumberError extends Error {}
@@ -22,11 +26,11 @@ function parseOptionalRollNumber(value: unknown) {
 
 export async function GET() {
   try {
-    const school = await getPrimarySchool();
+    const school = await getConfiguredSchool();
 
     if (!school) {
       return NextResponse.json(
-        { error: "No school has been configured yet." },
+        { error: SCHOOL_SETUP_REQUIRED_MESSAGE },
         { status: 404 }
       );
     }
@@ -37,6 +41,10 @@ export async function GET() {
       },
       include: {
         enrollments: {
+          where: {
+            academicYear: { is: { schoolId: school.id } },
+            class: { is: { schoolId: school.id } },
+          },
           include: {
             academicYear: true,
             class: true,
@@ -55,6 +63,10 @@ export async function GET() {
 
     return NextResponse.json(students);
   } catch (error) {
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     console.error("Failed to fetch students:", error);
 
     return NextResponse.json(
@@ -66,11 +78,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const school = await getPrimarySchool();
+    const school = await getConfiguredSchool();
 
     if (!school) {
       return NextResponse.json(
-        { error: "No school has been configured yet." },
+        { error: SCHOOL_SETUP_REQUIRED_MESSAGE },
         { status: 404 }
       );
     }
@@ -313,6 +325,10 @@ export async function POST(request: Request) {
         { error: "A student with this admission number already exists." },
         { status: 409 },
       );
+    }
+
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     if (isPrismaErrorCode(error, "P2002")) {

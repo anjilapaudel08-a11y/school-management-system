@@ -16,6 +16,11 @@ import {
   StudentCreditWorkflowError,
 } from "@/lib/finance/student-credit-workflow";
 import { prisma } from "@/lib/prisma";
+import {
+  getConfiguredSchool,
+  SchoolConfigurationError,
+  SCHOOL_SETUP_REQUIRED_MESSAGE,
+} from "@/lib/school";
 
 const creditInclude = {
   student: {
@@ -106,12 +111,10 @@ export async function GET() {
       return authorization.response;
     }
 
-    const school = await prisma.school.findFirst({
-      select: { id: true },
-    });
+    const school = await getConfiguredSchool();
     if (!school) {
       return NextResponse.json(
-        { error: "No school has been configured." },
+        { error: SCHOOL_SETUP_REQUIRED_MESSAGE },
         { status: 404 },
       );
     }
@@ -119,6 +122,9 @@ export async function GET() {
     const credits = await prisma.studentCredit.findMany({
       where: {
         student: {
+          is: { schoolId: school.id },
+        },
+        academicYear: {
           is: { schoolId: school.id },
         },
       },
@@ -156,6 +162,10 @@ export async function GET() {
       }),
     );
   } catch (error) {
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     console.error("Failed to load student credits:", error);
     return NextResponse.json(
       { error: "Failed to load student credits." },
@@ -254,6 +264,10 @@ export async function POST(request: Request) {
       { status: result.replayed ? 200 : 201 },
     );
   } catch (error) {
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     if (error instanceof StudentCreditWorkflowError) {
       return NextResponse.json(
         { error: error.message },

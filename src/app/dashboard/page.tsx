@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  getConfiguredSchool,
+  SchoolConfigurationError,
+} from "@/lib/school";
 import { dateToBS, BS_MONTHS } from "@/lib/nepali-date";
 import { redirect } from "next/navigation";
 import {
@@ -24,14 +28,17 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const school = await prisma.school.findFirst({
-    include: {
-      academicYears: {
-        where: { isActive: true },
-        take: 1,
-      },
-    },
-  });
+  let school;
+  let schoolConfigurationError: string | null = null;
+  try {
+    school = await getConfiguredSchool();
+  } catch (error) {
+    if (!(error instanceof SchoolConfigurationError)) {
+      throw error;
+    }
+    school = null;
+    schoolConfigurationError = error.message;
+  }
 
   if (!school) {
     return (
@@ -43,23 +50,28 @@ export default async function DashboardPage() {
           Setup required
         </p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#342724]">
-          Let’s set up your school
+          {schoolConfigurationError ? "School configuration error" : "Configure your school"}
         </h1>
         <p className="mt-3 max-w-xl leading-7 text-[#756b63]">
-          Add the school profile to start managing students, academics, and
-          finances from one place.
+          {schoolConfigurationError ??
+            "School configuration is missing. Configure the school profile before using dashboard statistics or school modules."}
         </p>
-        <Link
-          href="/dashboard/school"
-          className="mt-7 inline-flex items-center gap-2 rounded-xl bg-[#702d27] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#58231f]"
-        >
-          Configure school <ArrowUpRight className="h-4 w-4" />
-        </Link>
+        {!schoolConfigurationError && (
+          <Link
+            href="/dashboard/school"
+            className="mt-7 inline-flex items-center gap-2 rounded-xl bg-[#702d27] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#58231f]"
+          >
+            Configure school <ArrowUpRight className="h-4 w-4" />
+          </Link>
+        )}
       </div>
     );
   }
 
-  const activeAcademicYear = school.academicYears[0];
+  const activeAcademicYear = await prisma.academicYear.findFirst({
+    where: { schoolId: school.id, isActive: true },
+    orderBy: [{ startDate: "desc" }, { id: "asc" }],
+  });
   const [studentCount, teacherCount, classCount, activeEnrollmentCount, outstandingBillCount] =
     await Promise.all([
       prisma.student.count({ where: { schoolId: school.id } }),
@@ -67,13 +79,18 @@ export default async function DashboardPage() {
       prisma.class.count({ where: { schoolId: school.id } }),
       activeAcademicYear
         ? prisma.enrollment.count({
-            where: { academicYearId: activeAcademicYear.id },
+            where: {
+              academicYearId: activeAcademicYear.id,
+              student: { is: { schoolId: school.id } },
+              class: { is: { schoolId: school.id } },
+            },
           })
         : Promise.resolve(0),
       activeAcademicYear
         ? prisma.bill.count({
             where: {
               academicYearId: activeAcademicYear.id,
+              student: { is: { schoolId: school.id } },
               status: { in: ["UNPAID", "PARTIAL"] },
             },
           })

@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getGradeForPercentage, getPerformanceLevel } from "@/lib/grade-calculation";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 export async function GET(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
 
     const examId = searchParams.get("examId");
@@ -17,9 +22,15 @@ export async function GET(request: Request) {
       );
     }
 
-    const exam = await prisma.exam.findUnique({
+    const exam = await prisma.exam.findFirst({
       where: {
         id: examId,
+        class: { is: { schoolId: school.id } },
+        term: {
+          is: {
+            academicYear: { is: { schoolId: school.id } },
+          },
+        },
       },
       include: {
         class: true,
@@ -31,7 +42,11 @@ export async function GET(request: Request) {
         subjects: {
           include: {
             subject: true,
-            marks: true,
+            marks: {
+              where: {
+                student: { is: { schoolId: school.id } },
+              },
+            },
           },
           orderBy: {
             subject: {
@@ -96,10 +111,13 @@ export async function GET(request: Request) {
 
    const students = await prisma.student.findMany({
   where: {
+    schoolId: school.id,
     enrollments: {
       some: {
         classId: exam.classId,
         academicYearId: exam.term.academicYearId,
+        class: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
       },
     },
   },
@@ -108,6 +126,8 @@ export async function GET(request: Request) {
       where: {
         classId: exam.classId,
         academicYearId: exam.term.academicYearId,
+        class: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
       },
       orderBy: {
         createdAt: "asc",
@@ -337,6 +357,10 @@ const rankedResults: RankedResult[] = [...results]
       results: rankedResults,
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("GET results error:", error);
 
     return NextResponse.json(

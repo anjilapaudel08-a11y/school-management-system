@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getPrimarySchool } from "@/lib/school";
+import {
+  getConfiguredSchool,
+  SchoolConfigurationError,
+  SCHOOL_SETUP_REQUIRED_MESSAGE,
+} from "@/lib/school";
 
 export async function GET() {
   const requestStart = Date.now();
@@ -10,17 +14,17 @@ export async function GET() {
 
     const schoolStart = Date.now();
 
-    const school = await getPrimarySchool();
+    const school = await getConfiguredSchool();
 
     console.log(
-      `[classes] school.findFirst(): ${
+      `[classes] getConfiguredSchool(): ${
         Date.now() - schoolStart
       }ms`
     );
 
     if (!school) {
       return NextResponse.json(
-        { error: "No school has been configured yet." },
+        { error: SCHOOL_SETUP_REQUIRED_MESSAGE },
         { status: 404 }
       );
     }
@@ -50,6 +54,10 @@ export async function GET() {
 
     return NextResponse.json(classes);
   } catch (error) {
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     console.error(
       "Failed to fetch classes:",
       error
@@ -64,11 +72,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const school = await getPrimarySchool();
+    const school = await getConfiguredSchool();
 
     if (!school) {
       return NextResponse.json(
-        { error: "No school has been configured yet." },
+        { error: SCHOOL_SETUP_REQUIRED_MESSAGE },
         { status: 404 }
       );
     }
@@ -118,6 +126,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json(newClass, { status: 201 });
   } catch (error) {
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     console.error("Failed to create class:", error);
 
     return NextResponse.json(

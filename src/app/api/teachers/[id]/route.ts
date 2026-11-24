@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 type RouteContext = {
   params: Promise<{
@@ -12,12 +16,16 @@ export async function GET(
   context: RouteContext
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await context.params;
 
-    const teacher = await prisma.teacher.findUnique({
-      where: { id },
+    const teacher = await prisma.teacher.findFirst({
+      where: { id, schoolId: school.id },
       include: {
         salaryRecords: {
+          where: {
+            academicYear: { is: { schoolId: school.id } },
+          },
           include: {
             academicYear: {
               select: {
@@ -38,6 +46,10 @@ export async function GET(
           ],
         },
         assignments: {
+          where: {
+            class: { is: { schoolId: school.id } },
+            academicYear: { is: { schoolId: school.id } },
+          },
           include: {
             class: true,
             subject: true,
@@ -59,6 +71,10 @@ export async function GET(
 
     return NextResponse.json(teacher);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to fetch teacher profile:", error);
     return NextResponse.json(
       { error: "Failed to fetch teacher profile." },
@@ -72,12 +88,14 @@ export async function PATCH(
   context: RouteContext
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await context.params;
     const body = await request.json();
 
-    const existingTeacher = await prisma.teacher.findUnique({
+    const existingTeacher = await prisma.teacher.findFirst({
       where: {
         id,
+        schoolId: school.id,
       },
     });
 
@@ -126,6 +144,10 @@ export async function PATCH(
 
     return NextResponse.json(teacher);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to update teacher:", error);
 
     return NextResponse.json(
@@ -140,11 +162,13 @@ export async function DELETE(
   context: RouteContext
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await context.params;
 
-    const teacher = await prisma.teacher.findUnique({
+    const teacher = await prisma.teacher.findFirst({
       where: {
         id,
+        schoolId: school.id,
       },
       include: {
         assignments: true,
@@ -178,6 +202,10 @@ export async function DELETE(
       message: "Teacher deleted successfully.",
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to delete teacher:", error);
 
     return NextResponse.json(

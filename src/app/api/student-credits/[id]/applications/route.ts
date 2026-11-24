@@ -8,6 +8,7 @@ import {
   StudentCreditWorkflowError,
 } from "@/lib/finance/student-credit-workflow";
 import { prisma } from "@/lib/prisma";
+import { SchoolConfigurationError } from "@/lib/school";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -74,6 +75,10 @@ export async function POST(
       { status: result.replayed ? 200 : 201 },
     );
   } catch (error) {
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     if (error instanceof StudentCreditWorkflowError) {
       return NextResponse.json(
         { error: error.message },

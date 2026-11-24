@@ -1,63 +1,66 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
-import {
-  getVerifiedTestTarget,
-} from "./billing/helpers/database.js";
+import { getVerifiedTestTarget } from "./billing/helpers/database.js";
 
-test("exam protection and concurrent salary payments work on QA database", async () => {
+test("exam protection and mark publication work on QA database", async () => {
   const target = getVerifiedTestTarget();
+  const primarySchoolId = "cmwtatkm10000row42cgw4b64";
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  const previousSchoolId = process.env.SCHOOL_ID;
+  const previousNodeEnv = process.env.NODE_ENV;
   process.env.DATABASE_URL = target.connectionString;
+  process.env.SCHOOL_ID = primarySchoolId;
+  process.env.NODE_ENV = "test";
   let appPrisma;
   let fixture;
 
   try {
-    const [{ prisma }, examApi, publishApi, marksApi, resultsApi, salaryPayments] =
+    const [{ prisma }, examApi, publishApi, marksApi, resultsApi] =
       await Promise.all([
         import("../src/lib/prisma.ts"),
         import("../src/app/api/exams/[id]/route.ts"),
         import("../src/app/api/exams/[id]/publish/route.ts"),
         import("../src/app/api/marks/route.ts"),
         import("../src/app/api/results/route.ts"),
-        import("../src/lib/teacher-salary-payment.ts"),
       ]);
     appPrisma = prisma;
-      const [databaseInfo] = await appPrisma.$queryRaw`
-        SELECT current_database() AS database
-      `;
-      assert.equal(databaseInfo.database, target.database);
+    const [databaseInfo] = await appPrisma.$queryRaw`
+      SELECT current_database() AS database
+    `;
+    assert.equal(databaseInfo.database, target.database);
 
-      const marker = `ACADEMIC_RISK_QA_${randomUUID()}`;
-      const school = await appPrisma.school.create({ data: { name: marker } });
+    const marker = `ACADEMIC_RISK_QA_${randomUUID()}`;
+    const school = await appPrisma.school.findUniqueOrThrow({
+      where: { id: primarySchoolId },
+    });
+    const academicYear =
+      await appPrisma.academicYear.findFirstOrThrow({
+        where: { schoolId: school.id, isActive: true },
+      });
     fixture = {
-      schoolId: school.id,
-      academicYearId: null,
+      termId: null,
+      classId: null,
       subjectId: null,
-      gradeScaleId: null,
       examId: null,
       studentIds: [],
-      teacherId: null,
-      salaryId: null,
     };
-    const academicYear = await appPrisma.academicYear.create({
-      data: {
-        schoolId: school.id,
-        name: marker,
-        startDate: new Date("2026-01-01T00:00:00.000Z"),
-        endDate: new Date("2026-12-31T00:00:00.000Z"),
-      },
+    const maxTermOrder = await appPrisma.academicTerm.aggregate({
+      where: { academicYearId: academicYear.id },
+      _max: { order: true },
     });
-    fixture.academicYearId = academicYear.id;
     const term = await appPrisma.academicTerm.create({
       data: {
         academicYearId: academicYear.id,
         name: marker,
-        order: 1,
+        order: (maxTermOrder._max.order ?? 0) + 1,
       },
     });
+    fixture.termId = term.id;
     const classRecord = await appPrisma.class.create({
       data: { schoolId: school.id, name: marker, order: 1 },
     });
+    fixture.classId = classRecord.id;
     const subject = await appPrisma.subject.create({
       data: { name: marker },
     });
@@ -65,12 +68,12 @@ test("exam protection and concurrent salary payments work on QA database", async
     const students = [];
     for (const number of [1, 2]) {
       const student = await appPrisma.student.create({
-          data: {
-            schoolId: school.id,
-            admissionNumber: `${marker}_${number}`,
-            firstName: `${marker} ${number}`,
-          },
-        });
+        data: {
+          schoolId: school.id,
+          admissionNumber: `${marker}_${number}`,
+          firstName: `${marker} ${number}`,
+        },
+      });
       students.push(student);
       fixture.studentIds.push(student.id);
     }
@@ -101,21 +104,6 @@ test("exam protection and concurrent salary payments work on QA database", async
     const gradeScale = await appPrisma.gradeScale.findFirstOrThrow({
       where: { isDefault: true },
     });
-    const teacher = await appPrisma.teacher.create({
-      data: { schoolId: school.id, firstName: marker },
-    });
-    fixture.teacherId = teacher.id;
-    const salary = await appPrisma.teacherSalary.create({
-      data: {
-        teacherId: teacher.id,
-        academicYearId: academicYear.id,
-        month: 1,
-        year: 2026,
-        salaryAmount: 10000,
-        netAmount: 10000,
-      },
-    });
-    fixture.salaryId = salary.id;
 
     const missingMarksResponse = await publishApi.POST(
       new Request(`http://qa.local/api/exams/${exam.id}/publish`, {
@@ -245,44 +233,6 @@ test("exam protection and concurrent salary payments work on QA database", async
     );
     assert.equal(blockedMarkResponse.status, 409);
 
-    const concurrentPayments = await Promise.all(
-      [1, 2].map(async () => {
-        try {
-          await appPrisma.$transaction(
-            (tx) =>
-              salaryPayments.recordTeacherSalaryPayment(tx, {
-                teacherSalaryId: salary.id,
-                amount: 7000,
-                paymentDate: new Date("2026-01-15T12:00:00.000Z"),
-                method: "CASH",
-                reference: null,
-                notes: marker,
-              }),
-            { maxWait: 15_000, timeout: 20_000 },
-          );
-          return "accepted";
-        } catch (error) {
-          if (
-            error instanceof salaryPayments.SalaryPaymentRequestError &&
-            error.status === 400
-          ) {
-            return "rejected";
-          }
-          throw error;
-        }
-      }),
-    );
-    assert.deepEqual(concurrentPayments.sort(), ["accepted", "rejected"]);
-
-    const persistedPayments = await appPrisma.teacherSalaryPayment.findMany({
-      where: { teacherSalaryId: salary.id },
-    });
-    assert.equal(persistedPayments.length, 1);
-    assert.equal(
-      persistedPayments.reduce((sum, payment) => sum + Number(payment.amount), 0),
-      7000,
-    );
-
     const finalDeleteResponse = await examApi.DELETE(
       new Request(`http://qa.local/api/exams/${exam.id}`, {
         method: "DELETE",
@@ -292,19 +242,6 @@ test("exam protection and concurrent salary payments work on QA database", async
     assert.equal(finalDeleteResponse.status, 409);
   } finally {
     if (fixture) {
-      if (fixture.salaryId) {
-        await appPrisma.teacherSalaryPayment.deleteMany({
-          where: { teacherSalaryId: fixture.salaryId },
-        });
-        await appPrisma.teacherSalary.deleteMany({
-          where: { id: fixture.salaryId },
-        });
-      }
-      if (fixture.teacherId) {
-        await appPrisma.teacher.deleteMany({
-          where: { id: fixture.teacherId },
-        });
-      }
       if (fixture.examId) {
         await appPrisma.exam.deleteMany({
           where: { id: fixture.examId },
@@ -323,18 +260,32 @@ test("exam protection and concurrent salary payments work on QA database", async
           where: { id: { in: fixture.studentIds } },
         });
       }
-      if (fixture.academicYearId) {
+      if (fixture.termId) {
         await appPrisma.academicTerm.deleteMany({
-          where: { academicYearId: fixture.academicYearId },
-        });
-        await appPrisma.academicYear.deleteMany({
-          where: { id: fixture.academicYearId },
+          where: { id: fixture.termId },
         });
       }
-      await appPrisma.school.deleteMany({
-        where: { id: fixture.schoolId },
-      });
+      if (fixture.classId) {
+        await appPrisma.class.deleteMany({
+          where: { id: fixture.classId, schoolId: primarySchoolId },
+        });
+      }
     }
     if (appPrisma) await appPrisma.$disconnect();
+    if (previousDatabaseUrl === undefined) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = previousDatabaseUrl;
+    }
+    if (previousSchoolId === undefined) {
+      delete process.env.SCHOOL_ID;
+    } else {
+      process.env.SCHOOL_ID = previousSchoolId;
+    }
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
   }
 });

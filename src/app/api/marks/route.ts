@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 class MarkRequestError extends Error {
   status: number;
@@ -12,6 +16,7 @@ class MarkRequestError extends Error {
 
 export async function GET(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
 
     const examSubjectId = searchParams.get(
@@ -27,10 +32,19 @@ export async function GET(request: Request) {
       );
     }
 
-    const examSubject =
-      await prisma.examSubject.findUnique({
+    const examSubject = await prisma.examSubject.findFirst({
         where: {
           id: examSubjectId,
+          exam: {
+            is: {
+              class: { is: { schoolId: school.id } },
+              term: {
+                is: {
+                  academicYear: { is: { schoolId: school.id } },
+                },
+              },
+            },
+          },
         },
         include: {
           exam: {
@@ -62,6 +76,9 @@ export async function GET(request: Request) {
           academicYearId:
             examSubject.exam.term.academicYearId,
           classId: examSubject.exam.classId,
+          student: { is: { schoolId: school.id } },
+          class: { is: { schoolId: school.id } },
+          academicYear: { is: { schoolId: school.id } },
         },
         include: {
           student: true,
@@ -76,6 +93,7 @@ export async function GET(request: Request) {
     const marks = await prisma.mark.findMany({
       where: {
         examSubjectId,
+        student: { is: { schoolId: school.id } },
       },
       include: {
         student: true,
@@ -128,6 +146,10 @@ export async function GET(request: Request) {
       students,
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error(
       "Failed to fetch marks:",
       error
@@ -144,6 +166,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const body = await request.json();
 
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -219,8 +242,20 @@ export async function POST(request: Request) {
       );
     }
 
-    const examSubjectPreview = await prisma.examSubject.findUnique({
-      where: { id: examSubjectId },
+    const examSubjectPreview = await prisma.examSubject.findFirst({
+      where: {
+        id: examSubjectId,
+        exam: {
+          is: {
+            class: { is: { schoolId: school.id } },
+            term: {
+              is: {
+                academicYear: { is: { schoolId: school.id } },
+              },
+            },
+          },
+        },
+      },
       select: { examId: true },
     });
 
@@ -240,8 +275,20 @@ export async function POST(request: Request) {
         )
       `;
 
-      const examSubject = await tx.examSubject.findUnique({
-        where: { id: examSubjectId },
+      const examSubject = await tx.examSubject.findFirst({
+        where: {
+          id: examSubjectId,
+          exam: {
+            is: {
+              class: { is: { schoolId: school.id } },
+              term: {
+                is: {
+                  academicYear: { is: { schoolId: school.id } },
+                },
+              },
+            },
+          },
+        },
         include: {
           exam: {
             include: {
@@ -281,6 +328,9 @@ export async function POST(request: Request) {
           studentId,
           academicYearId: examSubject.exam.term.academicYearId,
           classId: examSubject.exam.classId,
+          student: { is: { schoolId: school.id } },
+          class: { is: { schoolId: school.id } },
+          academicYear: { is: { schoolId: school.id } },
         },
       });
 
@@ -321,6 +371,10 @@ export async function POST(request: Request) {
         mark.practicalMarks.toString(),
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     if (error instanceof MarkRequestError) {
       return NextResponse.json(
         { error: error.message },

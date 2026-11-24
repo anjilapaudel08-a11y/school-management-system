@@ -1,6 +1,10 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 import { FeeFrequency, FeeType } from "@/generated/prisma/client";
 import {
   bsToDate,
@@ -179,6 +183,7 @@ function getActiveBSMonthsInPeriod(
 // GET BILLS
 export async function GET(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
 
     const academicYearId = searchParams.get("academicYearId");
@@ -191,7 +196,12 @@ export async function GET(request: Request) {
       academicYearId?: string;
       studentId?: string;
       status?: "UNPAID" | "PARTIAL" | "PAID" | "CANCELLED";
-    } = {};
+      student?: { is: { schoolId: string } };
+      academicYear?: { is: { schoolId: string } };
+    } = {
+      student: { is: { schoolId: school.id } },
+      academicYear: { is: { schoolId: school.id } },
+    };
 
     if (id) {
       where.id = id;
@@ -234,6 +244,10 @@ export async function GET(request: Request) {
 
     return NextResponse.json(bills);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to load bills:", error);
 
     return NextResponse.json(
@@ -248,6 +262,7 @@ export async function GET(request: Request) {
 // CREATE BILL
 export async function POST(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const body = await request.json();
 
     const {
@@ -401,9 +416,10 @@ export async function POST(request: Request) {
     }
 
     // Find student.
-    const student = await prisma.student.findUnique({
+    const student = await prisma.student.findFirst({
       where: {
         id: studentId,
+        schoolId: school.id,
       },
     });
 
@@ -415,9 +431,10 @@ export async function POST(request: Request) {
     }
 
     // Find academic year.
-    const academicYear = await prisma.academicYear.findUnique({
+    const academicYear = await prisma.academicYear.findFirst({
       where: {
         id: academicYearId,
+        schoolId: school.id,
       },
       include: {
         terms: {
@@ -454,6 +471,12 @@ export async function POST(request: Request) {
             "Student is not enrolled in the selected academic year.",
         },
         { status: 400 }
+      );
+    }
+    if (enrollment.class.schoolId !== school.id) {
+      return NextResponse.json(
+        { error: "Student enrollment must belong to the configured school." },
+        { status: 400 },
       );
     }
 
@@ -1027,6 +1050,10 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     if (error instanceof BillGenerationError) {
       return NextResponse.json(
         { error: error.message },

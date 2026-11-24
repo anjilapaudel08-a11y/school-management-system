@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await params;
 
-    const academicYear = await prisma.academicYear.findUnique({
+    const academicYear = await prisma.academicYear.findFirst({
       where: {
         id,
+        schoolId: school.id,
       },
     });
 
@@ -24,7 +30,7 @@ export async function PATCH(
     await prisma.$transaction([
       prisma.academicYear.updateMany({
         where: {
-          schoolId: academicYear.schoolId,
+          schoolId: school.id,
         },
         data: {
           isActive: false,
@@ -49,6 +55,10 @@ export async function PATCH(
 
     return NextResponse.json(updatedAcademicYear);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to activate academic year:", error);
 
     return NextResponse.json(

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { bsToDate, dateToBS } from "@/lib/nepali-date";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 const categories = [
   "OFFICE_SUPPLIES",
@@ -87,10 +91,14 @@ function parseExpense(body: Record<string, unknown>) {
 
 export async function GET(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
     const academicYearId = searchParams.get("academicYearId");
     const expenses = await prisma.expense.findMany({
-      where: academicYearId ? { academicYearId } : undefined,
+      where: {
+        academicYear: { is: { schoolId: school.id } },
+        ...(academicYearId && { academicYearId }),
+      },
       include: {
         academicYear: { select: { id: true, name: true } },
       },
@@ -99,6 +107,10 @@ export async function GET(request: Request) {
 
     return NextResponse.json(expenses);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to load expenses:", error);
     return NextResponse.json(
       { error: "Failed to load expenses." },
@@ -109,6 +121,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const body = await request.json();
     const parsed = parseExpense(body);
     if ("error" in parsed) {
@@ -116,7 +129,7 @@ export async function POST(request: Request) {
     }
 
     const academicYear = await prisma.academicYear.findUnique({
-      where: { id: parsed.data.academicYearId },
+      where: { id: parsed.data.academicYearId, schoolId: school.id },
       select: { id: true },
     });
     if (!academicYear) {
@@ -129,6 +142,10 @@ export async function POST(request: Request) {
     const expense = await prisma.expense.create({ data: parsed.data });
     return NextResponse.json(expense, { status: 201 });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to record expense:", error);
     return NextResponse.json(
       { error: "Failed to record expense." },
@@ -139,6 +156,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     if (!id) {
@@ -151,12 +169,44 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
 
+    const academicYear = await prisma.academicYear.findFirst({
+      where: {
+        id: parsed.data.academicYearId,
+        schoolId: school.id,
+      },
+      select: { id: true },
+    });
+    if (!academicYear) {
+      return NextResponse.json(
+        { error: "Academic year not found." },
+        { status: 404 },
+      );
+    }
+
+    const existing = await prisma.expense.findFirst({
+      where: {
+        id,
+        academicYear: { is: { schoolId: school.id } },
+      },
+      select: { id: true },
+    });
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Expense not found." },
+        { status: 404 },
+      );
+    }
+
     const updated = await prisma.expense.update({
       where: { id },
       data: parsed.data,
     });
     return NextResponse.json(updated);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to update expense:", error);
     return NextResponse.json(
       { error: "Failed to update expense." },
@@ -167,13 +217,31 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const id = new URL(request.url).searchParams.get("id");
     if (!id) {
       return NextResponse.json({ error: "Expense ID is required." }, { status: 400 });
     }
+    const existing = await prisma.expense.findFirst({
+      where: {
+        id,
+        academicYear: { is: { schoolId: school.id } },
+      },
+      select: { id: true },
+    });
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Expense not found." },
+        { status: 404 },
+      );
+    }
     await prisma.expense.delete({ where: { id } });
     return NextResponse.json({ message: "Expense deleted." });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to delete expense:", error);
     return NextResponse.json(
       { error: "Failed to delete expense." },

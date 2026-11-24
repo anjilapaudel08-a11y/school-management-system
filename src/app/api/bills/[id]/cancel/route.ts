@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -10,9 +14,14 @@ export async function POST(
   context: RouteContext,
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await context.params;
-    const bill = await prisma.bill.findUnique({
-      where: { id },
+    const bill = await prisma.bill.findFirst({
+      where: {
+        id,
+        student: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
+      },
       select: {
         id: true,
         studentId: true,
@@ -93,6 +102,10 @@ export async function POST(
       bill: cancelledBill,
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     if (error instanceof Error) {
       if (error.message === "BILL_NOT_FOUND") {
         return NextResponse.json(

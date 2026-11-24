@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
+import {
   BS_MONTHS,
   bsMonthIndex,
   bsToDate,
@@ -33,16 +37,50 @@ function dateFromMonthIndex(index: number) {
   return bsToDate(year, month, 1);
 }
 
-function legacyPaidWhere(from: Date, to: Date) {
+function paymentWhere(from: Date, to: Date, schoolId: string) {
+  return {
+    paymentDate: { gte: from, lt: to },
+    bill: {
+      is: {
+        student: { is: { schoolId } },
+        academicYear: { is: { schoolId } },
+      },
+    },
+  };
+}
+
+function salaryPaymentWhere(from: Date, to: Date, schoolId: string) {
+  return {
+    paymentDate: { gte: from, lt: to },
+    teacherSalary: {
+      is: {
+        teacher: { is: { schoolId } },
+        academicYear: { is: { schoolId } },
+      },
+    },
+  };
+}
+
+function expenseWhere(from: Date, to: Date, schoolId: string) {
+  return {
+    expenseDate: { gte: from, lt: to },
+    academicYear: { is: { schoolId } },
+  };
+}
+
+function legacyPaidWhere(from: Date, to: Date, schoolId: string) {
   return {
     status: "PAID" as const,
     paymentDate: { gte: from, lt: to },
     payments: { none: {} },
+    teacher: { is: { schoolId } },
+    academicYear: { is: { schoolId } },
   };
 }
 
 export async function GET(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
     const period = searchParams.get("period") as Period | null;
     const date = parseBSDate(searchParams.get("date"));
@@ -59,7 +97,7 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Academic year is required." }, { status: 400 });
       }
       const academicYear = await prisma.academicYear.findUnique({
-        where: { id: academicYearId },
+        where: { id: academicYearId, schoolId: school.id },
         include: {
           terms: { orderBy: { order: "asc" } },
         },
@@ -119,7 +157,6 @@ export async function GET(request: Request) {
       }
     }
 
-    const range = { gte: from, lt: to };
     const [
       feeAggregate,
       waiverAggregate,
@@ -135,58 +172,61 @@ export async function GET(request: Request) {
     ] =
       await Promise.all([
         prisma.payment.aggregate({
-          where: { paymentDate: range },
+          where: paymentWhere(from, to, school.id),
           _sum: { amount: true },
           _count: { _all: true },
         }),
         prisma.payment.aggregate({
           where: {
-            paymentDate: range,
+            ...paymentWhere(from, to, school.id),
             waiverAmount: { gt: 0 },
           },
           _sum: { waiverAmount: true },
           _count: { _all: true },
         }),
         prisma.teacherSalaryPayment.aggregate({
-          where: { paymentDate: range },
+          where: salaryPaymentWhere(from, to, school.id),
           _sum: { amount: true },
           _count: { _all: true },
         }),
         prisma.teacherSalary.aggregate({
-          where: legacyPaidWhere(from, to),
+          where: legacyPaidWhere(from, to, school.id),
           _sum: { netAmount: true },
           _count: { _all: true },
         }),
         prisma.expense.aggregate({
-          where: { expenseDate: range },
+          where: expenseWhere(from, to, school.id),
           _sum: { amount: true },
           _count: { _all: true },
         }),
         prisma.expense.groupBy({
           by: ["category"],
-          where: { expenseDate: range },
+          where: expenseWhere(from, to, school.id),
           _sum: { amount: true },
           _count: { _all: true },
           orderBy: { _sum: { amount: "desc" } },
         }),
         prisma.payment.findMany({
-          where: { paymentDate: range },
+          where: paymentWhere(from, to, school.id),
           select: { amount: true, paymentDate: true },
         }),
         prisma.payment.findMany({
-          where: { paymentDate: range, waiverAmount: { gt: 0 } },
+          where: {
+            ...paymentWhere(from, to, school.id),
+            waiverAmount: { gt: 0 },
+          },
           select: { waiverAmount: true, paymentDate: true },
         }),
         prisma.teacherSalaryPayment.findMany({
-          where: { paymentDate: range },
+          where: salaryPaymentWhere(from, to, school.id),
           select: { amount: true, paymentDate: true },
         }),
         prisma.teacherSalary.findMany({
-          where: legacyPaidWhere(from, to),
+          where: legacyPaidWhere(from, to, school.id),
           select: { netAmount: true, paymentDate: true },
         }),
         prisma.expense.findMany({
-          where: { expenseDate: range },
+          where: expenseWhere(from, to, school.id),
           select: { amount: true, expenseDate: true },
         }),
       ]);
@@ -271,7 +311,7 @@ export async function GET(request: Request) {
     ] =
       await Promise.all([
         prisma.payment.findMany({
-          where: { paymentDate: range },
+          where: paymentWhere(from, to, school.id),
           include: {
             bill: {
               select: {
@@ -284,7 +324,10 @@ export async function GET(request: Request) {
           take: 10,
         }),
         prisma.payment.findMany({
-          where: { paymentDate: range, waiverAmount: { gt: 0 } },
+          where: {
+            ...paymentWhere(from, to, school.id),
+            waiverAmount: { gt: 0 },
+          },
           include: {
             bill: {
               select: {
@@ -297,7 +340,7 @@ export async function GET(request: Request) {
           take: 10,
         }),
         prisma.teacherSalaryPayment.findMany({
-          where: { paymentDate: range },
+          where: salaryPaymentWhere(from, to, school.id),
           include: {
             teacherSalary: {
               select: {
@@ -311,7 +354,7 @@ export async function GET(request: Request) {
           take: 10,
         }),
         prisma.teacherSalary.findMany({
-          where: legacyPaidWhere(from, to),
+          where: legacyPaidWhere(from, to, school.id),
           include: {
             teacher: { select: { firstName: true, middleName: true, lastName: true } },
           },
@@ -319,7 +362,7 @@ export async function GET(request: Request) {
           take: 10,
         }),
         prisma.expense.findMany({
-          where: { expenseDate: range },
+          where: expenseWhere(from, to, school.id),
           orderBy: { expenseDate: "desc" },
           take: 10,
         }),
@@ -413,6 +456,12 @@ export async function GET(request: Request) {
       transactions,
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) {
+      return configurationResponse;
+    }
+
     console.error("Failed to load finance overview:", error);
     return NextResponse.json(
       { error: "Failed to load finance overview." },

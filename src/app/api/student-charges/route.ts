@@ -7,6 +7,10 @@ import {
   FeeType,
 } from "@/generated/prisma/client";
 import { isPrismaErrorCode } from "@/lib/prisma-error";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 const allowedStudentChargeTypes: FeeType[] = [
   FeeType.BUS,
@@ -21,6 +25,7 @@ function isAllowedStudentChargeType(
 
 export async function GET(request: NextRequest) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
 
     const academicYearId =
@@ -31,6 +36,8 @@ export async function GET(request: NextRequest) {
 
     const charges = await prisma.studentCharge.findMany({
       where: {
+        student: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
         ...(academicYearId && { academicYearId }),
         ...(studentId && { studentId }),
       },
@@ -52,6 +59,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(charges);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("GET student charges error:", error);
 
     return NextResponse.json(
@@ -67,6 +78,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const school = await requireConfiguredSchool();
     const body = await request.json();
 
     const {
@@ -234,19 +246,16 @@ export async function POST(request: NextRequest) {
      * Make sure the student actually belongs to
      * the selected academic year.
      */
-    const enrollment =
-      await prisma.enrollment.findUnique({
-        where: {
-          studentId_academicYearId: {
-            studentId,
-            academicYearId,
-          },
-        },
-
-        select: {
-          id: true,
-        },
-      });
+    const enrollment = await prisma.enrollment.findFirst({
+      where: {
+        studentId,
+        academicYearId,
+        student: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
+        class: { is: { schoolId: school.id } },
+      },
+      select: { id: true },
+    });
 
     if (!enrollment) {
       return NextResponse.json(
@@ -292,6 +301,10 @@ export async function POST(request: NextRequest) {
       }
     );
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error(
       "POST student charge error:",
       error
@@ -311,6 +324,7 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
+    const school = await requireConfiguredSchool();
     const body = await request.json();
 
     const {
@@ -342,19 +356,19 @@ export async function PUT(request: NextRequest) {
      * This lets us correctly validate dates and
      * calculate the new amount.
      */
-    const existingCharge =
-      await prisma.studentCharge.findUnique({
-        where: {
-          id,
-        },
-
-        select: {
-          quantity: true,
-          rate: true,
-          startDate: true,
-          endDate: true,
-        },
-      });
+    const existingCharge = await prisma.studentCharge.findFirst({
+      where: {
+        id,
+        student: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
+      },
+      select: {
+        quantity: true,
+        rate: true,
+        startDate: true,
+        endDate: true,
+      },
+    });
 
     if (!existingCharge) {
       return NextResponse.json(
@@ -654,6 +668,10 @@ export async function PUT(request: NextRequest) {
       charge
     );
   } catch (error: unknown) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error(
       "PUT student charge error:",
       error
@@ -687,6 +705,7 @@ export async function DELETE(
   request: NextRequest
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } =
       new URL(request.url);
 
@@ -705,6 +724,21 @@ export async function DELETE(
       );
     }
 
+    const existingCharge = await prisma.studentCharge.findFirst({
+      where: {
+        id,
+        student: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
+      },
+      select: { id: true },
+    });
+    if (!existingCharge) {
+      return NextResponse.json(
+        { error: "Student charge not found." },
+        { status: 404 },
+      );
+    }
+
     await prisma.studentCharge.delete({
       where: {
         id,
@@ -716,6 +750,10 @@ export async function DELETE(
         "Student charge deleted successfully.",
     });
   } catch (error: unknown) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error(
       "DELETE student charge error:",
       error

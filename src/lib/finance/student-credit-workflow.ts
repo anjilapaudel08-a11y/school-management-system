@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 import {
+  getConfiguredSchool,
+  SCHOOL_SETUP_REQUIRED_MESSAGE,
+} from "@/lib/school";
+import {
   availableCreditCents,
   billStatusAfterSettlement,
   centsToMoney,
@@ -189,12 +193,10 @@ export async function issueStudentCredit(
     };
   }
 
-  const school = await tx.school.findFirst({
-    select: { id: true },
-  });
+  const school = await getConfiguredSchool(tx);
   if (!school) {
     throw new StudentCreditWorkflowError(
-      "No school has been configured.",
+      SCHOOL_SETUP_REQUIRED_MESSAGE,
       404,
     );
   }
@@ -320,12 +322,10 @@ export async function applyStudentCredit(
     throw new StudentCreditWorkflowError("Bill not found.", 404);
   }
 
-  const school = await tx.school.findFirst({
-    select: { id: true },
-  });
+  const school = await getConfiguredSchool(tx);
   if (!school) {
     throw new StudentCreditWorkflowError(
-      "No school has been configured.",
+      SCHOOL_SETUP_REQUIRED_MESSAGE,
       404,
     );
   }
@@ -579,12 +579,10 @@ export async function reverseStudentCreditApplication(
       409,
     );
   }
-  const school = await tx.school.findFirst({
-    select: { id: true },
-  });
+  const school = await getConfiguredSchool(tx);
   if (!school) {
     throw new StudentCreditWorkflowError(
-      "No school has been configured.",
+      SCHOOL_SETUP_REQUIRED_MESSAGE,
       404,
     );
   }
@@ -602,7 +600,12 @@ export async function reverseStudentCreditApplication(
     },
     select: { id: true },
   });
-  if (!student || !academicYear || bill.studentId !== student.id) {
+  if (
+    !student ||
+    !academicYear ||
+    bill.studentId !== student.id ||
+    bill.academicYearId !== credit.academicYearId
+  ) {
     throw new StudentCreditWorkflowError(
       "Credit application not found.",
       404,

@@ -1,15 +1,32 @@
 import { NextResponse } from "next/server";
+import {
+  getConfiguredSchool,
+  SchoolConfigurationError,
+} from "@/lib/school";
 import { prisma } from "@/lib/prisma";
+import { isPrismaErrorCode } from "@/lib/prisma-error";
+import { validateTeacherAssignmentRelationships } from "@/lib/teacher-assignment-validation";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const school = await getConfiguredSchool();
+
+    if (!school) {
+      return NextResponse.json(
+        { error: "School setup is required before loading teacher assignments." },
+        { status: 404 },
+      );
+    }
 
     const academicYearId = searchParams.get("academicYearId");
     const classId = searchParams.get("classId");
 
     const assignments = await prisma.teacherAssignment.findMany({
       where: {
+        teacher: { is: { schoolId: school.id } },
+        class: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
         ...(academicYearId ? { academicYearId } : {}),
         ...(classId ? { classId } : {}),
       },
@@ -35,6 +52,10 @@ export async function GET(request: Request) {
 
     return NextResponse.json(assignments);
   } catch (error) {
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     console.error("Failed to fetch teacher assignments:", error);
 
     return NextResponse.json(
@@ -46,18 +67,48 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const school = await getConfiguredSchool();
 
-    const teacherId = body.teacherId;
-    const classId = body.classId;
-    const subjectId = body.subjectId;
-    const academicYearId = body.academicYearId;
+    if (!school) {
+      return NextResponse.json(
+        { error: "School setup is required before creating teacher assignments." },
+        { status: 404 },
+      );
+    }
+
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Request body must be valid JSON." },
+        { status: 400 },
+      );
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: "Teacher assignment information must be an object." },
+        { status: 400 },
+      );
+    }
+
+    const {
+      teacherId: rawTeacherId,
+      classId: rawClassId,
+      subjectId: rawSubjectId,
+      academicYearId: rawAcademicYearId,
+    } = body as Record<string, unknown>;
 
     if (
-      !teacherId ||
-      !classId ||
-      !subjectId ||
-      !academicYearId
+      typeof rawTeacherId !== "string" ||
+      typeof rawClassId !== "string" ||
+      typeof rawSubjectId !== "string" ||
+      typeof rawAcademicYearId !== "string" ||
+      !rawTeacherId.trim() ||
+      !rawClassId.trim() ||
+      !rawSubjectId.trim() ||
+      !rawAcademicYearId.trim()
     ) {
       return NextResponse.json(
         {
@@ -68,47 +119,50 @@ export async function POST(request: Request) {
       );
     }
 
-    const [
-      teacher,
-      schoolClass,
-      subject,
-      academicYear,
-      classSubject,
-    ] = await Promise.all([
-      prisma.teacher.findUnique({
-        where: {
-          id: teacherId,
-        },
-      }),
+    const teacherId = rawTeacherId.trim();
+    const classId = rawClassId.trim();
+    const subjectId = rawSubjectId.trim();
+    const academicYearId = rawAcademicYearId.trim();
 
-      prisma.class.findUnique({
-        where: {
-          id: classId,
-        },
-      }),
-
-      prisma.subject.findUnique({
-        where: {
-          id: subjectId,
-        },
-      }),
-
-      prisma.academicYear.findUnique({
-        where: {
-          id: academicYearId,
-        },
-      }),
-
-      prisma.classSubject.findUnique({
-        where: {
-          classId_subjectId_academicYearId: {
-            classId,
-            subjectId,
-            academicYearId,
+    const [teacher, schoolClass, subject, academicYear, classSubject] =
+      await Promise.all([
+        prisma.teacher.findFirst({
+          where: {
+            id: teacherId,
+            schoolId: school.id,
           },
-        },
-      }),
-    ]);
+        }),
+
+        prisma.class.findFirst({
+          where: {
+            id: classId,
+            schoolId: school.id,
+          },
+        }),
+
+        prisma.subject.findUnique({
+          where: {
+            id: subjectId,
+          },
+        }),
+
+        prisma.academicYear.findFirst({
+          where: {
+            id: academicYearId,
+            schoolId: school.id,
+          },
+        }),
+
+        prisma.classSubject.findUnique({
+          where: {
+            classId_subjectId_academicYearId: {
+              classId,
+              subjectId,
+              academicYearId,
+            },
+          },
+        }),
+      ]);
 
     if (!teacher) {
       return NextResponse.json(
@@ -138,12 +192,17 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!classSubject) {
+    const relationshipError = validateTeacherAssignmentRelationships({
+      configuredSchoolId: school.id,
+      teacherSchoolId: teacher.schoolId,
+      classSchoolId: schoolClass.schoolId,
+      academicYearSchoolId: academicYear.schoolId,
+      hasClassSubject: Boolean(classSubject),
+    });
+
+    if (relationshipError) {
       return NextResponse.json(
-        {
-          error:
-            "This subject has not been assigned to this class for the selected academic year.",
-        },
+        { error: relationshipError },
         { status: 400 }
       );
     }
@@ -190,6 +249,17 @@ export async function POST(request: Request) {
       status: 201,
     });
   } catch (error) {
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (isPrismaErrorCode(error, "P2002")) {
+      return NextResponse.json(
+        { error: "This teacher is already assigned to this subject and class." },
+        { status: 409 },
+      );
+    }
+
     console.error(
       "Failed to create teacher assignment:",
       error

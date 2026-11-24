@@ -1,7 +1,7 @@
 # Deployment Readiness Report
 
-**Assessment date:** 2026-11-23
-**Decision:** **Not ready for school deployment yet.** Phase 2 and Phase 3 confirmed defects were fixed and retested, but supported management coverage remains partial and a wrong-school dashboard display remains open. Billing and student-credit suites have not been rerun against the refreshed dataset; production configuration and a production-like recovery rehearsal remain unverified.
+**Assessment date:** 2026-11-24
+**Decision:** **Not ready for school deployment yet.** The single-school/dashboard/teacher-assignment remediation is source-reviewed, unit-tested, and database-verified against the isolated QA database. Prior dashboard browser results remain the recorded UI evidence; they were not repeated after the final API-wide scope changes, per the user's direction to reuse that evidence. Phase 4 awaits user approval. Broader supported-management coverage remains partial; the full billing and student-credit regression suites have not been rerun against the refreshed dataset; production configuration and a production-like recovery rehearsal remain unverified.
 
 ## Current QA baseline after authorized reset (2026-11-23)
 
@@ -29,7 +29,23 @@ Phase 3 was completed against the existing isolated QA fixture using the browser
 
 Two student defects were fixed and retested: impossible date-of-birth values were normalized instead of rejected, and deleting a student cascaded away enrollment history. Student APIs now use strict DOB parsing, and deletion is blocked when enrollment history exists. Focused regression tests, full lint, TypeScript validation, and the local production build passed.
 
-An out-of-scope issue remains open: the dashboard displayed the separate `BILL_QA_2083` school's data while student pages/APIs were scoped to the primary QA school. Browser evidence and source review point to unordered school selection in `src/app/dashboard/page.tsx`. Do not deploy multi-school configurations until this selector is made deterministic and verified. Teacher-assignment cross-school consistency is a separate unverified follow-up. Full test steps, defect history, cleanup, and evidence are in [QA-PHASE3-STUDENT-REPORT.md](./QA-PHASE3-STUDENT-REPORT.md).
+At Phase 3 completion, the dashboard displayed the separate `BILL_QA_2083` school's data while student pages/APIs were scoped to the primary QA school, and teacher-assignment cross-school consistency remained unverified. Both code issues were addressed in the subsequent single-school remediation below.
+
+## Single-school, dashboard, and teacher-assignment remediation (2026-11-24)
+
+The application is configured for one school. `/api/school` is the only normal creation path and creates only during initial setup; repeated updates target the same record. School deletion and switching are unavailable. The shared `getConfiguredSchool()` helper uses the explicit deployment/test `SCHOOL_ID` when set. Production rejects multiple school rows even when that variable is set, rather than silently selecting one.
+
+The isolated QA database contains the primary synthetic school (`cmwtatkm10000row42cgw4b64`) and a separate artificial billing-test school (`cmwtawdr10000scw4moape0b6`). The QA app is configured to the primary ID; that deployment setting does not expose a school selector or the billing fixture to normal workflows. The verified database still contains both existing schools; neither was removed, merged, or reset.
+
+Final evidence is separated by type in [SINGLE-SCHOOL-REMEDIATION-REPORT.md](./SINGLE-SCHOOL-REMEDIATION-REPORT.md):
+
+- **Source-reviewed:** school creation/deletion/switching surface, shared school resolution, production duplicate-record failure, dashboard query scoping.
+- **Unit-tested:** explicit QA selection, missing/invalid ID and ambiguous-record behavior, create-once/update-on-repeat, no-school selector behavior, and teacher-assignment relationships/multiplicity (10 focused tests passed).
+- **Mocked API-tested:** with an authenticated session and empty mocked school lookup, settings GET returned HTTP 404 with setup-required guidance; no live QA record was removed.
+- **Database-verified:** guarded tests confirmed school-owned academic and finance APIs reject or omit artificial-school IDs; academic-year activation left both schools' active-year state unchanged; finance-overview totals/counts matched direct primary-school-only aggregates. Teacher-assignment create/read/delete, valid multiple-class/subject assignments, duplicate conflict, cross-school and unconfigured-subject rejection, unchanged rejection counts, student-registration regression, and artificial-school/financial snapshot preservation passed.
+- **Prior browser-verified:** settings GET and repeated update returned success for one stable school ID; database school count stayed at two. The dashboard showed the primary school's name, 52 students, 8 teachers, 12 classes, active year 2083, 52 enrollments, and 0 outstanding bills, matching the APIs and database at that time. The dashboard was not reopened after the final API-wide scope changes; the user selected reuse of this prior browser evidence.
+
+`npm run lint` passed without warnings, `npm run build -- --webpack` passed, `npx tsc --noEmit` passed after the build, all 10 focused selector/assignment unit tests passed, and all three guarded isolated-QA regressions passed. The assignment test emitted a `pg` overlapping-query deprecation warning but passed. No production system was accessed; no QA reset, reseed, historical-record modification, or billing/payment/credit calculation change occurred. Phase 4 has not started and remains blocked pending user approval.
 
 ## Finalized school requirements and follow-up
 
@@ -37,7 +53,7 @@ An out-of-scope issue remains open: the dashboard displayed the separate `BILL_Q
 |---|---|
 | Sections | **Not required** for school operations. Preserve current section-linked enrollments and schema/data. Any removal or simplification requires a separate dependency review and approved migration; it is not part of Phase 3. |
 | Term date boundaries | **Required**, but not implemented in the current `AcademicTerm` model. Schedule a separate academic-management change with date-range and overlap rules confirmed by the school. |
-| Multiple teacher assignments | **Required** across subjects/classes, with exact duplicate prevention and valid class-subject links. Phase 3 behavioral regression passed; cross-school consistency remains a separate review item. |
+| Multiple teacher assignments | **Required** across subjects/classes, with exact duplicate prevention and valid class-subject links. Unit and guarded database route verification passed for valid multiplicity, reads/deletes, duplicates, cross-school links, and unconfigured subjects. |
 | Academic-year editing | **Not required** as a routine workflow. An exceptional correction must first inventory dependent records and preserve an audit trail. |
 | Teacher/class/subject activation | **Desirable**, lower priority; not implemented in the current models/UI. |
 | Authorization and password recovery | Retain the approved future ADMIN/ACCOUNTANT specification and broad non-ADMIN authorization backlog. In-app password recovery remains an existing product limitation. |

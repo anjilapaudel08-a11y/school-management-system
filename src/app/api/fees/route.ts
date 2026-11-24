@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { FeeType, FeeFrequency } from "@/generated/prisma/client";
 import { isPrismaErrorCode } from "@/lib/prisma-error";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 export async function GET(request: NextRequest) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
 
     const academicYearId = searchParams.get("academicYearId");
@@ -12,6 +17,8 @@ export async function GET(request: NextRequest) {
 
     const fees = await prisma.feeStructure.findMany({
       where: {
+        academicYear: { is: { schoolId: school.id } },
+        class: { is: { schoolId: school.id } },
         ...(academicYearId && { academicYearId }),
         ...(classId && { classId }),
       },
@@ -28,6 +35,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(fees);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("GET fees error:", error);
 
     return NextResponse.json(
@@ -39,6 +50,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const school = await requireConfiguredSchool();
     const body = await request.json();
 
     const {
@@ -87,6 +99,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const [academicYear, schoolClass] = await Promise.all([
+      prisma.academicYear.findFirst({
+        where: { id: academicYearId, schoolId: school.id },
+        select: { id: true },
+      }),
+      prisma.class.findFirst({
+        where: { id: classId, schoolId: school.id },
+        select: { id: true },
+      }),
+    ]);
+    if (!academicYear || !schoolClass) {
+      return NextResponse.json(
+        { error: "Class and academic year must belong to the configured school." },
+        { status: 400 },
+      );
+    }
+
     const fee = await prisma.feeStructure.create({
       data: {
         academicYearId,
@@ -104,6 +133,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(fee, { status: 201 });
   } catch (error: unknown) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("POST fees error:", error);
 
     if (isPrismaErrorCode(error, "P2002")) {
@@ -125,6 +158,7 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
+    const school = await requireConfiguredSchool();
     const body = await request.json();
 
     const {
@@ -208,6 +242,21 @@ export async function PUT(request: NextRequest) {
       data.isActive = isActive;
     }
 
+    const existingFee = await prisma.feeStructure.findFirst({
+      where: {
+        id,
+        academicYear: { is: { schoolId: school.id } },
+        class: { is: { schoolId: school.id } },
+      },
+      select: { id: true },
+    });
+    if (!existingFee) {
+      return NextResponse.json(
+        { error: "Fee structure not found." },
+        { status: 404 },
+      );
+    }
+
     const fee = await prisma.feeStructure.update({
       where: { id },
       data,
@@ -219,6 +268,10 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json(fee);
   } catch (error: unknown) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("PUT fees error:", error);
 
     if (isPrismaErrorCode(error, "P2025")) {
@@ -247,6 +300,7 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
@@ -254,6 +308,21 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json(
         { error: "Fee ID is required" },
         { status: 400 }
+      );
+    }
+
+    const existingFee = await prisma.feeStructure.findFirst({
+      where: {
+        id,
+        academicYear: { is: { schoolId: school.id } },
+        class: { is: { schoolId: school.id } },
+      },
+      select: { id: true },
+    });
+    if (!existingFee) {
+      return NextResponse.json(
+        { error: "Fee structure not found." },
+        { status: 404 },
       );
     }
 
@@ -265,6 +334,10 @@ export async function DELETE(request: NextRequest) {
       message: "Fee structure deleted successfully",
     });
   } catch (error: unknown) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("DELETE fees error:", error);
 
     if (isPrismaErrorCode(error, "P2025")) {

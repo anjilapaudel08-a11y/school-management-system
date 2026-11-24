@@ -1,6 +1,10 @@
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
-import { getPrimarySchool } from "@/lib/school";
+import {
+  getConfiguredSchool,
+  saveConfiguredSchool,
+  SchoolConfigurationError,
+  SCHOOL_SETUP_REQUIRED_MESSAGE,
+} from "@/lib/school";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -51,17 +55,21 @@ export async function GET() {
       );
     }
 
-    const school = await getPrimarySchool();
+    const school = await getConfiguredSchool();
 
     if (!school) {
       return NextResponse.json(
-        { error: "School information not found." },
+        { error: SCHOOL_SETUP_REQUIRED_MESSAGE },
         { status: 404 }
       );
     }
 
     return NextResponse.json(school);
   } catch (error) {
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     console.error("School fetch error:", error);
 
     return NextResponse.json(
@@ -108,24 +116,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const existingSchool = await getPrimarySchool();
-    const school = existingSchool
-      ? await prisma.school.update({
-          where: { id: existingSchool.id },
-          data: parsedBody.data,
-        })
-      : await prisma.school.create({ data: parsedBody.data });
+    const { school, created } = await saveConfiguredSchool(parsedBody.data);
 
     return NextResponse.json(
       {
-        message: existingSchool
-          ? "School information updated successfully."
-          : "School information created successfully.",
+        message: created
+          ? "School information created successfully."
+          : "School information updated successfully.",
         school,
       },
-      { status: existingSchool ? 200 : 201 }
+      { status: created ? 201 : 200 }
     );
   } catch (error) {
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     console.error("School save error:", error);
 
     return NextResponse.json(

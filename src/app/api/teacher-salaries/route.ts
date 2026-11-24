@@ -2,6 +2,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -18,14 +22,22 @@ export async function GET(request: Request) {
       );
     }
 
+    const school = await requireConfiguredSchool();
     const url = new URL(request.url);
     const academicYearId =
       url.searchParams.get("academicYearId");
 
     const salaries = await prisma.teacherSalary.findMany({
       where: academicYearId
-        ? { academicYearId }
-        : undefined,
+        ? {
+            academicYearId,
+            teacher: { is: { schoolId: school.id } },
+            academicYear: { is: { schoolId: school.id } },
+          }
+        : {
+            teacher: { is: { schoolId: school.id } },
+            academicYear: { is: { schoolId: school.id } },
+          },
       include: {
         teacher: {
           select: {
@@ -60,6 +72,10 @@ export async function GET(request: Request) {
 
     return NextResponse.json(salaries);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to load teacher salaries:", error);
 
     return NextResponse.json(
@@ -80,6 +96,7 @@ export async function POST(request: Request) {
       );
     }
 
+    const school = await requireConfiguredSchool();
     const body = await request.json();
 
     const teacherId = String(body.teacherId ?? "").trim();
@@ -169,6 +186,15 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    if (
+      teacher.schoolId !== school.id ||
+      academicYear.schoolId !== school.id
+    ) {
+      return NextResponse.json(
+        { error: "Teacher and academic year must belong to the configured school." },
+        { status: 400 },
+      );
+    }
 
     const submittedSalary =
       body.salaryAmount === undefined ||
@@ -249,6 +275,10 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     const errorCode =
       typeof error === "object" &&
       error !== null &&

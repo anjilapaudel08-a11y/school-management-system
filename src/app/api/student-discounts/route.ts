@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { FeeType } from "@/generated/prisma/client";
 import { isPrismaErrorCode } from "@/lib/prisma-error";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 const allowedDiscountFeeTypes: FeeType[] = [
   FeeType.TUITION,
@@ -35,6 +39,7 @@ function parseDate(value: string | null | undefined) {
  */
 export async function GET(request: NextRequest) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
 
     const academicYearId =
@@ -46,6 +51,8 @@ export async function GET(request: NextRequest) {
 
     const discounts = await prisma.studentDiscount.findMany({
       where: {
+        student: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
         ...(academicYearId && { academicYearId }),
         ...(studentId && { studentId }),
 
@@ -72,6 +79,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(discounts);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("GET student discounts error:", error);
 
     return NextResponse.json(
@@ -88,6 +99,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const school = await requireConfiguredSchool();
     const body = await request.json();
 
     const {
@@ -199,18 +211,16 @@ export async function POST(request: NextRequest) {
     /*
      * Verify student enrollment.
      */
-    const enrollment =
-      await prisma.enrollment.findUnique({
-        where: {
-          studentId_academicYearId: {
-            studentId,
-            academicYearId,
-          },
-        },
-        select: {
-          classId: true,
-        },
-      });
+    const enrollment = await prisma.enrollment.findFirst({
+      where: {
+        studentId,
+        academicYearId,
+        student: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
+        class: { is: { schoolId: school.id } },
+      },
+      select: { classId: true },
+    });
 
     if (!enrollment) {
       return NextResponse.json(
@@ -351,6 +361,10 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error(
       "POST student discount error:",
       error
@@ -371,6 +385,7 @@ export async function POST(request: NextRequest) {
  */
 export async function PUT(request: NextRequest) {
   try {
+    const school = await requireConfiguredSchool();
     const body = await request.json();
 
     const {
@@ -395,8 +410,12 @@ export async function PUT(request: NextRequest) {
     }
 
     const existingDiscount =
-      await prisma.studentDiscount.findUnique({
-        where: { id },
+      await prisma.studentDiscount.findFirst({
+        where: {
+          id,
+          student: { is: { schoolId: school.id } },
+          academicYear: { is: { schoolId: school.id } },
+        },
 
         include: {
           feeTypes: true,
@@ -590,16 +609,14 @@ export async function PUT(request: NextRequest) {
        * class fee structure.
        */
       const enrollment =
-        await prisma.enrollment.findUnique({
+        await prisma.enrollment.findFirst({
           where: {
-            studentId_academicYearId: {
-              studentId:
-                existingDiscount.studentId,
-              academicYearId:
-                existingDiscount.academicYearId,
-            },
+            studentId: existingDiscount.studentId,
+            academicYearId: existingDiscount.academicYearId,
+            student: { is: { schoolId: school.id } },
+            academicYear: { is: { schoolId: school.id } },
+            class: { is: { schoolId: school.id } },
           },
-
           select: {
             classId: true,
           },
@@ -792,6 +809,10 @@ export async function PUT(request: NextRequest) {
       discount
     );
   } catch (error: unknown) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error(
       "PUT student discount error:",
       error
@@ -826,6 +847,7 @@ export async function DELETE(
   request: NextRequest
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } =
       new URL(request.url);
 
@@ -842,6 +864,21 @@ export async function DELETE(
       );
     }
 
+    const existing = await prisma.studentDiscount.findFirst({
+      where: {
+        id,
+        student: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
+      },
+      select: { id: true },
+    });
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Student discount not found." },
+        { status: 404 },
+      );
+    }
+
     await prisma.studentDiscount.delete({
       where: { id },
     });
@@ -851,6 +888,10 @@ export async function DELETE(
         "Student discount deleted successfully.",
     });
   } catch (error: unknown) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error(
       "DELETE student discount error:",
       error

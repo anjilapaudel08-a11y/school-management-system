@@ -5,7 +5,12 @@ import { getVerifiedTestTarget } from "./billing/helpers/database.js";
 
 test("student registration preserves manual numbers and safely allocates generated numbers", async () => {
   const target = getVerifiedTestTarget();
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  const previousSchoolId = process.env.SCHOOL_ID;
+  const previousNodeEnv = process.env.NODE_ENV;
   process.env.DATABASE_URL = target.connectionString;
+  process.env.SCHOOL_ID = "cmwtatkm10000row42cgw4b64";
+  process.env.NODE_ENV = "test";
   let appPrisma;
   const createdStudentIds = [];
 
@@ -21,8 +26,8 @@ test("student registration preserves manual numbers and safely allocates generat
     `;
     assert.equal(databaseInfo.database, target.database);
 
-    const school = await appPrisma.school.findFirstOrThrow({
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    const school = await appPrisma.school.findUniqueOrThrow({
+      where: { id: process.env.SCHOOL_ID },
     });
     const academicYear = await appPrisma.academicYear.findFirstOrThrow({
       where: { schoolId: school.id, isActive: true },
@@ -224,5 +229,20 @@ test("student registration preserves manual numbers and safely allocates generat
       });
     }
     if (appPrisma) await appPrisma.$disconnect();
+    if (previousDatabaseUrl === undefined) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = previousDatabaseUrl;
+    }
+    if (previousSchoolId === undefined) {
+      delete process.env.SCHOOL_ID;
+    } else {
+      process.env.SCHOOL_ID = previousSchoolId;
+    }
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
   }
 });

@@ -1,12 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { redirect } from "next/navigation";
 
-export default async function Home() {
-  const schoolCount = await prisma.school.count();
-
-  return (
-    <main>
-      <h1>School Management System</h1>
-      <p>Schools in database: {schoolCount}</p>
-    </main>
-  );
+export default function Home() {
+  redirect("/login");
 }

@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 export async function GET(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
 
     const termId = searchParams.get("termId");
@@ -10,6 +15,12 @@ export async function GET(request: Request) {
 
     const exams = await prisma.exam.findMany({
       where: {
+        class: { is: { schoolId: school.id } },
+        term: {
+          is: {
+            academicYear: { is: { schoolId: school.id } },
+          },
+        },
         ...(termId ? { termId } : {}),
         ...(classId ? { classId } : {}),
       },
@@ -43,6 +54,10 @@ export async function GET(request: Request) {
 
     return NextResponse.json(exams);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to fetch exams:", error);
 
     return NextResponse.json(
@@ -54,6 +69,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const body = await request.json();
 
     const termId = body.termId;
@@ -126,9 +142,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const term = await prisma.academicTerm.findUnique({
+    const term = await prisma.academicTerm.findFirst({
       where: {
         id: termId,
+        academicYear: { is: { schoolId: school.id } },
       },
     });
 
@@ -139,9 +156,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const schoolClass = await prisma.class.findUnique({
+    const schoolClass = await prisma.class.findFirst({
       where: {
         id: classId,
+        schoolId: school.id,
       },
     });
 
@@ -296,6 +314,10 @@ const uniqueSubjectIds: string[] = [
       status: 201,
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to create exam:", error);
 
     return NextResponse.json(

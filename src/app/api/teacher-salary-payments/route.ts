@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
+import {
   recordTeacherSalaryPayment,
   SalaryPaymentRequestError,
 } from "@/lib/teacher-salary-payment";
@@ -38,6 +42,7 @@ export async function POST(request: Request) {
       );
     }
 
+    const school = await requireConfiguredSchool();
     const body = await request.json();
 
     const teacherSalaryId = String(
@@ -115,6 +120,21 @@ export async function POST(request: Request) {
         ? body.notes.trim() || null
         : null;
 
+    const salaryRecord = await prisma.teacherSalary.findFirst({
+      where: {
+        id: teacherSalaryId,
+        teacher: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
+      },
+      select: { id: true },
+    });
+    if (!salaryRecord) {
+      return NextResponse.json(
+        { error: "Teacher salary record not found." },
+        { status: 404 },
+      );
+    }
+
     const salary = await prisma.$transaction(
       (tx) =>
         recordTeacherSalaryPayment(tx, {
@@ -133,6 +153,10 @@ export async function POST(request: Request) {
       salary,
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     if (error instanceof SalaryPaymentRequestError) {
       return NextResponse.json(
         { error: error.message },

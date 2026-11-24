@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 const validPaymentMethods = [
   "CASH",
@@ -15,6 +19,7 @@ const validPaymentMethods = [
 // ==================================================
 export async function GET(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
 
     const billId = searchParams.get("billId");
@@ -22,6 +27,12 @@ export async function GET(request: Request) {
 
     const payments = await prisma.payment.findMany({
       where: {
+        bill: {
+          is: {
+            student: { is: { schoolId: school.id } },
+            academicYear: { is: { schoolId: school.id } },
+          },
+        },
         ...(billId ? { billId } : {}),
         ...(method
           ? {
@@ -49,6 +60,10 @@ export async function GET(request: Request) {
       count: payments.length,
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to fetch payments:", error);
 
     return NextResponse.json(
@@ -66,6 +81,7 @@ export async function GET(request: Request) {
 // ==================================================
 export async function POST(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const body = await request.json();
     const idempotencyKey =
       request.headers.get("Idempotency-Key")?.trim();
@@ -242,9 +258,11 @@ export async function POST(request: Request) {
           }
 
           const existingBill =
-            await tx.bill.findUnique({
+            await tx.bill.findFirst({
               where: {
                 id: existingPayment.billId,
+                student: { is: { schoolId: school.id } },
+                academicYear: { is: { schoolId: school.id } },
               },
             });
 
@@ -310,9 +328,11 @@ export async function POST(request: Request) {
         // Find bill
         // ----------------------------------------------
 
-        const bill = await tx.bill.findUnique({
+        const bill = await tx.bill.findFirst({
           where: {
             id: billId,
+            student: { is: { schoolId: school.id } },
+            academicYear: { is: { schoolId: school.id } },
           },
         });
 
@@ -558,6 +578,10 @@ export async function POST(request: Request) {
       { status: result.replayed ? 200 : 201 }
     );
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error(
       "Failed to record payment:",
       error

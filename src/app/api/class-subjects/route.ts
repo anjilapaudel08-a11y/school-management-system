@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 export async function GET(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
     const classId = searchParams.get("classId");
     const academicYearId = searchParams.get("academicYearId");
@@ -16,10 +21,29 @@ export async function GET(request: Request) {
       );
     }
 
+    const [schoolClass, academicYear] = await Promise.all([
+      prisma.class.findFirst({
+        where: { id: classId, schoolId: school.id },
+        select: { id: true },
+      }),
+      prisma.academicYear.findFirst({
+        where: { id: academicYearId, schoolId: school.id },
+        select: { id: true },
+      }),
+    ]);
+    if (!schoolClass || !academicYear) {
+      return NextResponse.json(
+        { error: "Class and academic year must belong to the configured school." },
+        { status: 404 },
+      );
+    }
+
     const classSubjects = await prisma.classSubject.findMany({
       where: {
         classId,
         academicYearId,
+        class: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
       },
       include: {
         subject: true,
@@ -33,6 +57,10 @@ export async function GET(request: Request) {
 
     return NextResponse.json(classSubjects);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to fetch class subjects:", error);
 
     return NextResponse.json(
@@ -44,6 +72,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const body = await request.json();
 
     const classId = body.classId;
@@ -68,9 +97,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const schoolClass = await prisma.class.findUnique({
+    const schoolClass = await prisma.class.findFirst({
       where: {
         id: classId,
+        schoolId: school.id,
       },
     });
 
@@ -81,9 +111,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const academicYear = await prisma.academicYear.findUnique({
+    const academicYear = await prisma.academicYear.findFirst({
       where: {
         id: academicYearId,
+        schoolId: school.id,
       },
     });
 
@@ -116,6 +147,8 @@ export async function POST(request: Request) {
         where: {
           classId,
           academicYearId,
+          class: { is: { schoolId: school.id } },
+          academicYear: { is: { schoolId: school.id } },
         },
       });
 
@@ -134,6 +167,8 @@ export async function POST(request: Request) {
       where: {
         classId,
         academicYearId,
+        class: { is: { schoolId: school.id } },
+        academicYear: { is: { schoolId: school.id } },
       },
       include: {
         subject: true,
@@ -147,6 +182,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json(classSubjects);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to save class subjects:", error);
 
     return NextResponse.json(

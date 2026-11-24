@@ -1,12 +1,17 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await params;
 
     const { searchParams } = new URL(request.url);
@@ -23,12 +28,17 @@ export async function GET(
     // STUDENT
     // ---------------------------------------------------------
 
-    const student = await prisma.student.findUnique({
+    const student = await prisma.student.findFirst({
       where: {
         id,
+        schoolId: school.id,
       },
       include: {
         enrollments: {
+          where: {
+            academicYear: { is: { schoolId: school.id } },
+            class: { is: { schoolId: school.id } },
+          },
           include: {
             academicYear: true,
             class: true,
@@ -115,9 +125,10 @@ export async function GET(
     // ACADEMIC YEAR
     // ---------------------------------------------------------
 
-    const academicYear = await prisma.academicYear.findUnique({
+    const academicYear = await prisma.academicYear.findFirst({
       where: {
         id: selectedAcademicYearId,
+        schoolId: school.id,
       },
     });
 
@@ -125,13 +136,6 @@ export async function GET(
       return NextResponse.json(
         { error: "Academic year not found." },
         { status: 404 }
-      );
-    }
-
-    if (academicYear.schoolId !== student.schoolId) {
-      return NextResponse.json(
-        { error: "Invalid academic year." },
-        { status: 400 }
       );
     }
 
@@ -584,6 +588,10 @@ export async function GET(
       },
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error(
       "Failed to fetch student profile:",
       error

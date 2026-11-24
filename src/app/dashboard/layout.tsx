@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
+import {
+  getConfiguredSchool,
+  SchoolConfigurationError,
+} from "@/lib/school";
 import { redirect } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 
@@ -15,16 +18,23 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
-  const school = await prisma.school.findFirst({
-    select: { name: true, shortName: true },
-  });
+  let schoolName = "School setup required";
+  try {
+    const school = await getConfiguredSchool();
+    schoolName = school?.shortName || school?.name || schoolName;
+  } catch (error) {
+    if (!(error instanceof SchoolConfigurationError)) {
+      throw error;
+    }
+    schoolName = "School configuration error";
+  }
 
   return (
     <DashboardShell
       userEmail={session.user?.email ?? ""}
       userName={session.user?.name ?? ""}
       userRole={String(session.user?.role ?? "ADMIN")}
-      schoolName={school?.shortName || school?.name || "School Management"}
+      schoolName={schoolName}
     >
       {children}
     </DashboardShell>

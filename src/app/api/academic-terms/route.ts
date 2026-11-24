@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 export async function GET(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const { searchParams } = new URL(request.url);
     const academicYearId = searchParams.get("academicYearId");
 
@@ -13,15 +18,31 @@ export async function GET(request: Request) {
       );
     }
 
+    const academicYear = await prisma.academicYear.findFirst({
+      where: { id: academicYearId, schoolId: school.id },
+      select: { id: true },
+    });
+    if (!academicYear) {
+      return NextResponse.json(
+        { error: "Academic year not found." },
+        { status: 404 },
+      );
+    }
+
     const terms = await prisma.academicTerm.findMany({
       where: {
         academicYearId,
+        academicYear: { is: { schoolId: school.id } },
       },
       include: {
         academicYear: true,
         _count: {
           select: {
-            exams: true,
+            exams: {
+              where: {
+                class: { is: { schoolId: school.id } },
+              },
+            },
           },
         },
       },
@@ -32,6 +53,10 @@ export async function GET(request: Request) {
 
     return NextResponse.json(terms);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to fetch academic terms:", error);
 
     return NextResponse.json(
@@ -43,6 +68,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const body = await request.json();
 
     const academicYearId = body.academicYearId;
@@ -67,9 +93,10 @@ export async function POST(request: Request) {
     }
 
     const academicYear =
-      await prisma.academicYear.findUnique({
+      await prisma.academicYear.findFirst({
         where: {
           id: academicYearId,
+          schoolId: school.id,
         },
       });
 
@@ -115,7 +142,11 @@ export async function POST(request: Request) {
         academicYear: true,
         _count: {
           select: {
-            exams: true,
+            exams: {
+              where: {
+                class: { is: { schoolId: school.id } },
+              },
+            },
           },
         },
       },
@@ -125,6 +156,10 @@ export async function POST(request: Request) {
       status: 201,
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to create academic term:", error);
 
     return NextResponse.json(

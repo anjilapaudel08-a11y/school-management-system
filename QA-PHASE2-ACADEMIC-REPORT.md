@@ -58,7 +58,11 @@ Status values are `PASS`, `FAIL`, `BLOCKED`, and `NOT EXECUTED`. Where a defect 
 1. **School settings did not load or update — Medium (P2), fixed.** `SchoolForm` initialized empty and never loaded `/api/school`; saving an existing record returned 409. The form now loads the configured school, surfaces load/save errors, and POST updates the existing row or creates one only when none exists. The API validates name, email, URL, and established year.
 2. **Reversed academic-year dates were accepted — Medium (P2), fixed.** Client and API now reject end dates before start dates. The UI shows a validation message, the API returns 400, and no invalid retest year persisted.
 3. **Duplicate academic-year handling returned HTTP 500 — Medium (P2), fixed.** The API now maps Prisma unique violations to HTTP 409 with a clear conflict message.
-4. **Unordered school selection could target the separate billing school — High (P1), fixed for school settings, academic years, classes, teachers, and student collection/creation routes.** These routes now use `getPrimarySchool()`, ordered by creation time and ID. During retesting, the wrong-school year was created as a test artifact; it had no dependents and was deleted by exact ID. Post-fix API counts and duplicate requests confirmed the primary-school scope.
+4. **Unordered school selection could target the separate billing school — High (P1), fixed for school settings, academic years, classes, teachers, and student collection/creation routes.** At Phase 2 completion these routes used `getPrimarySchool()`, ordered by creation time and ID. The 2026-11-24 single-school remediation consolidated selection in `getConfiguredSchool()` and applied it to the dashboard, credit workflows, and teacher assignments as well. See [SINGLE-SCHOOL-REMEDIATION-REPORT.md](./SINGLE-SCHOOL-REMEDIATION-REPORT.md).
+
+## Follow-up remediation (2026-11-24)
+
+The school later confirmed that this is a single-school application. The dashboard's separate unordered lookup and the teacher-assignment cross-school validation gap recorded in the Phase 3 report were addressed. Setup creation is limited to the initial configured record; application workflows do not offer school deletion or switching. The remediation report documents code changes and local validation. No QA or production database was accessed during this follow-up.
 
 ## Unsupported or untested capabilities
 

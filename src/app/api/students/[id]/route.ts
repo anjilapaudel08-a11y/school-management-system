@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isPrismaErrorCode } from "@/lib/prisma-error";
 import { parseOptionalStudentDateOfBirth } from "@/lib/student-validation";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 type RouteContext = {
   params: Promise<{
@@ -28,12 +32,14 @@ export async function PATCH(
   context: RouteContext
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await context.params;
     const body = await request.json();
 
-    const student = await prisma.student.findUnique({
+    const student = await prisma.student.findFirst({
       where: {
         id,
+        schoolId: school.id,
       },
       include: {
         enrollments: true,
@@ -310,6 +316,10 @@ export async function PATCH(
 
     return NextResponse.json(updatedStudent);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     if (isPrismaErrorCode(error, "P2002")) {
       return NextResponse.json(
         { error: "A student with this admission number already exists." },
@@ -331,11 +341,13 @@ export async function DELETE(
   context: RouteContext
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await context.params;
 
-    const student = await prisma.student.findUnique({
+    const student = await prisma.student.findFirst({
       where: {
         id,
+        schoolId: school.id,
       },
       include: {
         marks: true,
@@ -426,6 +438,10 @@ export async function DELETE(
       message: "Student deleted successfully.",
     });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     if (
       typeof error === "object" &&
       error !== null &&

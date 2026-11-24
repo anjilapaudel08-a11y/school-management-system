@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isPrismaErrorCode } from "@/lib/prisma-error";
-import { getPrimarySchool } from "@/lib/school";
+import {
+  getConfiguredSchool,
+  SchoolConfigurationError,
+  SCHOOL_SETUP_REQUIRED_MESSAGE,
+} from "@/lib/school";
 
 export async function GET() {
   const requestStart = Date.now();
@@ -11,17 +15,17 @@ export async function GET() {
 
     const schoolStart = Date.now();
 
-    const school = await getPrimarySchool();
+    const school = await getConfiguredSchool();
 
     console.log(
-      `[academic-years] school.findFirst(): ${
+      `[academic-years] getConfiguredSchool(): ${
         Date.now() - schoolStart
       }ms`
     );
 
     if (!school) {
       return NextResponse.json(
-        { error: "No school has been configured yet." },
+        { error: SCHOOL_SETUP_REQUIRED_MESSAGE },
         { status: 404 }
       );
     }
@@ -51,6 +55,10 @@ export async function GET() {
 
     return NextResponse.json(academicYears);
   } catch (error) {
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     console.error(
       "Failed to fetch academic years:",
       error
@@ -120,11 +128,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const school = await getPrimarySchool();
+    const school = await getConfiguredSchool();
 
     if (!school) {
       return NextResponse.json(
-        { error: "No school has been configured yet." },
+        { error: SCHOOL_SETUP_REQUIRED_MESSAGE },
         { status: 404 }
       );
     }
@@ -140,6 +148,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json(academicYear, { status: 201 });
   } catch (error) {
+    if (error instanceof SchoolConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
     if (isPrismaErrorCode(error, "P2002")) {
       return NextResponse.json(
         { error: "An academic year with this name already exists." },

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { FeeFrequency, FeeType } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 const discountFeeTypes: FeeType[] = [
   FeeType.TUITION,
@@ -26,6 +30,7 @@ function requiredText(value: unknown): string {
 
 async function createDiscount(
   academicYearId: string,
+  schoolId: string,
   entry: BulkEntry,
 ) {
   const studentId = requiredText(entry.studentId);
@@ -65,9 +70,13 @@ async function createDiscount(
   }
 
   return prisma.$transaction(async (tx) => {
-    const enrollment = await tx.enrollment.findUnique({
+    const enrollment = await tx.enrollment.findFirst({
       where: {
-        studentId_academicYearId: { studentId, academicYearId },
+        studentId,
+        academicYearId,
+        student: { is: { schoolId } },
+        academicYear: { is: { schoolId } },
+        class: { is: { schoolId } },
       },
       select: { classId: true },
     });
@@ -136,6 +145,7 @@ async function createDiscount(
 
 async function createCharge(
   academicYearId: string,
+  schoolId: string,
   entry: BulkEntry,
 ) {
   const studentId = requiredText(entry.studentId);
@@ -176,9 +186,13 @@ async function createCharge(
   }
 
   return prisma.$transaction(async (tx) => {
-    const enrollment = await tx.enrollment.findUnique({
+    const enrollment = await tx.enrollment.findFirst({
       where: {
-        studentId_academicYearId: { studentId, academicYearId },
+        studentId,
+        academicYearId,
+        student: { is: { schoolId } },
+        academicYear: { is: { schoolId } },
+        class: { is: { schoolId } },
       },
       select: { id: true },
     });
@@ -207,6 +221,7 @@ async function createCharge(
 
 export async function POST(request: Request) {
   try {
+    const school = await requireConfiguredSchool();
     const body: unknown = await request.json();
     if (
       typeof body !== "object" ||
@@ -255,7 +270,7 @@ export async function POST(request: Request) {
     }
 
     const academicYear = await prisma.academicYear.findUnique({
-      where: { id: academicYearId },
+      where: { id: academicYearId, schoolId: school.id },
       select: { id: true },
     });
     if (!academicYear) {
@@ -285,10 +300,14 @@ export async function POST(request: Request) {
       try {
         const record =
           kind === "discount"
-            ? await createDiscount(academicYearId, entry)
-            : await createCharge(academicYearId, entry);
+            ? await createDiscount(academicYearId, school.id, entry)
+            : await createCharge(academicYearId, school.id, entry);
         created.push(record.id);
       } catch (error) {
+        const configurationResponse =
+          schoolConfigurationErrorResponse(error);
+        if (configurationResponse) return configurationResponse;
+
         if (error instanceof AdjustmentRequestError) {
           failures.push({ studentId, error: error.message });
         } else {

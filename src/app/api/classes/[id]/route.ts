@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireConfiguredSchool,
+  schoolConfigurationErrorResponse,
+} from "@/lib/school-api";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await params;
     const body = await request.json();
 
@@ -27,7 +32,7 @@ export async function PATCH(
     }
 
     const existingClass = await prisma.class.findUnique({
-      where: { id },
+      where: { id, schoolId: school.id },
     });
 
     if (!existingClass) {
@@ -63,6 +68,10 @@ export async function PATCH(
 
     return NextResponse.json(updatedClass);
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to update class:", error);
 
     return NextResponse.json(
@@ -77,10 +86,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const school = await requireConfiguredSchool();
     const { id } = await params;
 
     const existingClass = await prisma.class.findUnique({
-      where: { id },
+      where: { id, schoolId: school.id },
       include: {
         enrollments: {
           select: { id: true },
@@ -130,6 +140,10 @@ export async function DELETE(
 
     return NextResponse.json({ message: "Class deleted successfully." });
   } catch (error) {
+    const configurationResponse =
+      schoolConfigurationErrorResponse(error);
+    if (configurationResponse) return configurationResponse;
+
     console.error("Failed to delete class:", error);
 
     return NextResponse.json(
